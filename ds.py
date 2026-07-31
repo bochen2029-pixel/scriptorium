@@ -269,6 +269,11 @@ class DsClient:
                 return parsed, meta
             except (_SoftFailure, ValidationError, json.JSONDecodeError) as e:
                 last_err = f"{type(e).__name__}: {e}"
+                # Adaptive ladder: reasoning ate the whole output budget -> the
+                # identical retry is doomed; escalate max_tokens instead.
+                used = getattr(e, "usage", {}).get("completion_tokens", 0)
+                if used and used >= 0.85 * body["max_tokens"]:
+                    body["max_tokens"] = min(body["max_tokens"] * 3, 131_072)
         if rescue and mode == "extract":              # thinking-enabled rescue x1
             self.meter.rescues += 1
             rescue_body = {k: v for k, v in body.items()
@@ -351,7 +356,7 @@ class DsClient:
                 "reasoning_content": msg.get("reasoning_content"),
             })
             if not content.strip():
-                raise _SoftFailure("empty content (documented failure mode)")
+                raise _SoftFailure("empty content (documented failure mode)", usage=usage)
             return content, {"model": model_seen, "usage": usage, "ms": ms}
         raise _SoftFailure("unreachable")
 
@@ -361,3 +366,7 @@ class DsClient:
 
 class _SoftFailure(Exception):
     """A failure the PS-3 ladder may retry."""
+
+    def __init__(self, msg: str, usage: dict[str, Any] | None = None):
+        super().__init__(msg)
+        self.usage = usage or {}

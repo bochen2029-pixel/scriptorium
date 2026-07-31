@@ -229,6 +229,27 @@ def test_empty_content_is_retried(ds_stub):
     assert out.answer == "second" and meta["attempts"] == 2
 
 
+def test_reasoning_exhaustion_escalates_max_tokens(ds_stub):
+    """Empty content + completion_tokens ~ max_tokens = reasoning ate the output
+    budget; the ladder must escalate, not repeat the doomed call."""
+    exhausted = {"prompt_tokens": 100, "prompt_cache_hit_tokens": 0,
+                 "prompt_cache_miss_tokens": 100, "completion_tokens": 4000,
+                 "completion_tokens_details": {"reasoning_tokens": 4000}}
+    ds_stub.script = [{"content": "", "usage": exhausted},
+                      {"content": "long-form prose"}]
+    c = client(ds_stub)
+
+    async def go():
+        out, _ = await c.chat(system="S", user="U", mode="think", effort="high",
+                              max_tokens=4000, unit_id="t1")
+        await c.close()
+        return out
+
+    assert run(go()) == "long-form prose"
+    assert ds_stub.requests[0]["max_tokens"] == 4000
+    assert ds_stub.requests[1]["max_tokens"] == 12000     # 3x escalation
+
+
 def test_ps5_warmup_shape(ds_stub):
     c = client(ds_stub)
 

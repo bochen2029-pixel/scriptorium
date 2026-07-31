@@ -351,7 +351,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
                 out, _ = await client.chat(
                     system=induce_sys, user=user,
                     tail=f"\n[batch {i + 1} of {len(batches)}]",
-                    mode="think", effort="high", max_tokens=8000,
+                    mode="think", effort="high", max_tokens=24_000,
                     unit_id=f"induce-{i:03d}", out_model=None)
                 from cards import OntologyDraft
                 return OntologyDraft.model_validate(
@@ -367,14 +367,19 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         if not drafts:
             raise SystemExit("all induction batches failed — no charter")
 
-        # -- merge + rubric --------------------------------------------------
-        merged_raw, _ = await client.chat(
-            system=_prompt("p1_merge_v0"),
-            user=json.dumps([d.model_dump() for d in drafts], ensure_ascii=False)
-            + f"\n\nCorpus stats: {corpus_tokens:,} tokens, {len(rows)} records, "
-              f"years {min(r.year for r in rows)}-{max(r.year for r in rows)}.",
-            mode="think", effort="high", max_tokens=16000,
-            unit_id="merge", out_model=OntologyMerged)
+        # -- merge + rubric (fatal if quarantined: no charter without them) --
+        try:
+            merged_raw, _ = await client.chat(
+                system=_prompt("p1_merge_v0"),
+                user=json.dumps([d.model_dump() for d in drafts], ensure_ascii=False)
+                + f"\n\nCorpus stats: {corpus_tokens:,} tokens, {len(rows)} records, "
+                  f"years {min(r.year for r in rows)}-{max(r.year for r in rows)}.",
+                mode="think", effort="high", max_tokens=49_152,
+                unit_id="merge", out_model=OntologyMerged)
+        except UnitQuarantined as e:
+            raise SystemExit(f"merge pass quarantined after the full ladder — no "
+                             f"charter this run; meter ${client.meter.usd():.3f}. "
+                             f"({e.detail[:160]})") from e
         merged: OntologyMerged = merged_raw
         say(f"  merged ontology: {len(merged.projects)} projects, "
             f"{len(merged.themes)} themes, {len(merged.genres)} genres")
@@ -382,12 +387,17 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         excerpts = "\n\n".join(
             _fmt_record(r, texts[(r.doc_id, r.seq)][:1200])
             for r in sampled[:: max(1, len(sampled) // 8)][:8])
-        rubric_out, _ = await client.chat(
-            system=_prompt("p1_rubric_v0"),
-            user="ONTOLOGY:\n" + json.dumps(merged.model_dump(), ensure_ascii=False)
-            + "\n\nEXCERPTS:\n" + excerpts,
-            mode="think", effort="high", max_tokens=20000,
-            unit_id="rubric", out_model=RubricOut)
+        try:
+            rubric_out, _ = await client.chat(
+                system=_prompt("p1_rubric_v0"),
+                user="ONTOLOGY:\n" + json.dumps(merged.model_dump(), ensure_ascii=False)
+                + "\n\nEXCERPTS:\n" + excerpts,
+                mode="think", effort="high", max_tokens=49_152,
+                unit_id="rubric", out_model=RubricOut)
+        except UnitQuarantined as e:
+            raise SystemExit(f"rubric pass quarantined after the full ladder — no "
+                             f"charter this run; meter ${client.meter.usd():.3f}. "
+                             f"({e.detail[:160]})") from e
 
         charter.mkdir(exist_ok=True)
         (charter / "ontology.yaml").write_text(
@@ -466,7 +476,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
             try:
                 text_out, _ = await client.chat(
                     system=_prompt("p1_synthesis_v0"), user=user, mode="think",
-                    effort="high", max_tokens=4000, unit_id=f"synth-{name}")
+                    effort="high", max_tokens=12_000, unit_id=f"synth-{name}")
                 (syn_dir / f"{name}.md").write_text(text_out, "utf-8")
                 return True
             except UnitQuarantined as e:
