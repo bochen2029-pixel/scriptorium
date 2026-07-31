@@ -32,10 +32,11 @@ from __future__ import annotations
 import io
 import json
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from canon import GENESIS, chain_hash
 
@@ -108,7 +109,7 @@ class Tape:
     # -- open / boot ------------------------------------------------------
     @classmethod
     def open(cls, archive_root: str | Path,
-             segment_max_bytes: int = SEGMENT_MAX_BYTES_DEFAULT) -> "Tape":
+             segment_max_bytes: int = SEGMENT_MAX_BYTES_DEFAULT) -> Tape:
         t = cls(root=Path(archive_root), segment_max_bytes=segment_max_bytes)
         t.seg_dir.mkdir(parents=True, exist_ok=True)
         t._load_lock()
