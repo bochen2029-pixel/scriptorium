@@ -1,144 +1,113 @@
 # scriptorium — run state
 
-**Rungs S0 (Tape) and S1 (Charter) — GREEN, 2026-07-31, one session.** Next
-session starts **S2 (first reading: `read`)**. Trust this file + git over any
-memory; RATIFIED.md holds the operator's standing delegation and decisions of
-record. 75 pytest green + ruff clean = the definition of green throughout;
-every number below is from a real run, none simulated.
+**S0 GREEN · S1 GREEN · S2 code green + live slice green (gate partially met —
+see below). 2026-07-31, one session.** Trust this file + git over any memory;
+RATIFIED.md holds the operator's standing delegation. 80 pytest + ruff clean =
+green throughout; all numbers below are from real runs.
 
-## S0 — the Tape (green; see git history for the falsifier detail)
+## Rung scoreboard
 
-Delivered: `canon.py` (CANON-JSON-v1 + blake2b-128 chain, KAVs pinned in
-scriptorium.lock) · `tape.py` (append-only segments, fsync'd batches, torn-tail
-repair <=1 line journaled, crash roll-forward, full verify; Windows
-lock-replace race found BY the kill-resume falsifier and fixed with bounded
-retry) · `intake.py` (P0: walk discovery + `everything` cross-check, exact
-dedup + strided-MinHash near-dup flag-and-keep (top-5/doc, batched), modality
-routing text/pdf/docx/image/av, cost-lane ordering, span system {doc_id, seq,
-start, end}) · `local.py` (:8091 attach-or-launch Qwen3.5-9B+mmproj OCR,
-frozen contract prompt, R-class fingerprints; :8092 gated until S2) ·
-`scriptorium.py` CLI + `scriptorium.cmd` (CRLF!) · falsifiers (a)-(e) green
-incl. real TTS speech/video through real earshot.
+- **S0 · Tape — GREEN at 1.75B-token scale.** Real intake of corpus #1
+  (C:\_DAD\projects-mirror -> archive root C:\_DAD\projects-mirror-archive):
+  13,958/13,958 classified = 100.0%; 9,743 docs / 166,742 text records /
+  4,213 dedup folds / 7,777 near-dup flags / 2 typed quarantines; census
+  1,753,033,797 tokens, x-check ratio 0.9999; `status --verify`: tape OK,
+  188,484 records, 65 segments, head fec1ef561b8ebdaa8606d537133c2d78.
+  All five S0 falsifiers green (incl. real TTS video through real earshot;
+  kill-resume found + fixed a real Windows lock-replace race).
+- **S1 · Charter — GREEN, FROZEN.** discover run 2 on the real tape: 1,120
+  records / 6.35M tokens sampled across 107 project cells; 144/152 induction
+  batches; ontology 45 projects / 22 themes / 14 genres; 118 golden shards
+  (12 planted defects); 3 golden syntheses; scoring 0.671 / 0.681 -> STABLE;
+  charter FROZEN, 125 artifacts, root 209ed2439de94905ebe99f7da60b2ffd.
+  $0.913, 27 min. (Run 1 failed honestly for $1.64 — reasoning exhausted
+  max_tokens -> empty content; fixed with the adaptive ladder in ds.py.)
+- **S2 · First reading — code green; live slice green; RUNG GATE PARTIAL.**
 
-**S0 at real scale — corpus #1 = C:\_DAD\projects-mirror (RATIFIED item 3),
-intake run 20260731T175629Z-48884d, verbatim:**
+## S2 detail (the live section)
 
-```
-admitted 9743 docs (166742 text records) | skipped(done) 0 | dedup 4213 | excluded 0 | quarantined 2 | near-dup flags 7777 | 6004.3s
-reconciliation: 13958/13958 classified = 100.0% complete (doc 9743 / dedup 4213 / excluded 0 / quarantined 2)
-  everything x-check [claude-projects]: index 14026 vs walk 13958 — DIFFERS (index lag?)
-census: 9,743 files, 4,356,509,907 chars, 1,753,033,797 tokens (text 1.750B + pdf 2.6M)
-census x-check vs estimate_tokens.py on 10 samples: mean ratio 0.9999
-status --verify: tape OK: 188484 records, 65 segments, head fec1ef561b8ebdaa8606d537133c2d78
-```
+`read.py` (P2): frozen-charter fingerprint verify before the first call
+(tamper -> refuse); system prefix = rubric_P2.md + p1_refcard_v0 byte-identical
+(the exact golden-authoring pair); non-thinking t=0 JSON -> CardV0; cards
+append-only fsync'd in catalog/cards/cards.jsonl, typed quarantines beside it;
+resume = skip present keys (unit-tested: zero dupes zero gaps, incl. truncated
+file); calibration every 50 batches on rotating 8-shard golden subsets with
+halt-below-bar (drilled TWICE: unit test + live on the real archive — mean
+0.000 -> checkpoint-clean halt, zero cards, halt journaled); EmbedSidecar
+:8092 wired (attach-or-launch, qwen3-embedding pinned); catalog/index.sqlite =
+chunks + FTS5 + float32 vectors.
 
-1.75B tokens — past the spec's "verbose lifetime" scale point. Quarantines: 2
-webfetch .bin files, typed. The everything x-check delta (+68) is informational
-(index-side extras); walk is ground truth. **Known census caveat:** the mirror
-copy reset all mtimes to 2026 -> the year axis is degenerate; stratification
-falls back to per-project (107 cells), which is the meaningful axis for this
-corpus. Content-time chronology is a P3-era concern (or re-intake from the
-original dirs someday — new docs, append-only, dedup folds the rest).
-
-## S1 — the Charter (green)
-
-Delivered: `ds.py` — the ONE provider seam, PS-1..PS-10 all implemented and
-stub-tested (retry ladder -> thinking rescue -> typed quarantine; AIMD gate
-halve/+64-per-min; hard usd_cap at start AND mid-flight; model-fp change halt;
-cache-aware meter; .env loader; **adaptive max_tokens escalation** when
-reasoning exhausts the output budget — found by live-run 1, see below) ·
-`discover.py` + `cards.py` + 5 frozen P1 prompts (hashes pinned in
-scriptorium.lock) · `freeze` gated on the S1 falsifier.
-
-**Live run 1 (p1-20260731T193852Z): failed honestly, $1.64.** 104/152
-induction batches returned empty content — thinking-high consumed the whole
-max_tokens=8000 as reasoning, and the same-call retry ladder repeated the
-doomed call. Fix: think-call headroom (24K-49K) + the adaptive ladder (empty
-content + completion_tokens ~ max_tokens -> triple the budget before retrying;
-tested). Merge/rubric quarantines now exit clean instead of tracebacking.
-
-**Live run 2 (p1-20260731T193852Z fix, run id in charter.yaml): GREEN,
-verbatim:**
+**Live slice run p2-20260731T221032Z (project C--FERRYMAN, 36.1M tokens,
+2,705 chunks, cap $8), verbatim:**
 
 ```
-166742 text records, 1,753,033,797 tokens census
-sampled 1120 records, 6,351,194 tokens across 107 cells (budget 6,000,000)
-PS-8 gate: estimate $1.39 under cap $5.00 — proceeding
-induction: 152 batches, thinking effort=high ... 144/152 usable
-merged ontology: 45 projects, 22 themes, 14 genres
-goldens: 118 shards written, 12 defective; hit-rate 90%
-golden syntheses: 3/3 written
-scoring: run1 0.671  run2 0.681  bar 0.55 -> STABLE (falsifier passed)
-== P1 discover done in 1621s — $0.913 spent, hit-rate 91%
-charter FROZEN: 125 artifacts fingerprinted, root 209ed2439de94905ebe99f7da60b2ffd
+calibration @batch 0: mean 0.702 (bar 0.55)
+calibration @batch 50: mean 0.571 (bar 0.55)
+batch 57/57: cards 2683 quar 22 vec 2683 $6.63 hit 16%
+== P2 read p2-20260731T221032Z: 2683 cards, 22 quarantined, 2683 vectors |
+   prefix-hit efficiency 99% (vital >=60%) | total hit share 16% | $6.634 in 5315s
 ```
 
-The charter (C:\_DAD\projects-mirror-archive\charter\) is genuinely grounded:
-ontology names the operator, Access Intellect LLC, the organ family, the
-doctrine lines; the compression prior names whose voices count and lets tool
-chatter fall. Ratification = RATIFIED.md item 1 (operator delegation);
-**operator edits + re-freeze remain invited** — discover refuses to overwrite a
-frozen charter (version law), `--rescore-only` re-runs QC anytime.
+2,683 + 22 = 2,705 — every selected chunk terminal. Spot-check: cards carry
+{model, rubric_v r1, charter_root 209ed243} fingerprints; claims are typed
+(subject/predicate/object/polarity/confidence); topics use the charter's own
+theme vocabulary; FTS queries answer; vectors 1:1 with cards.
 
-Session spend total: **$2.55** (run1 $1.64 + run2 $0.91 + smoke $0.0001)
-against the operator's "too cheap to meter" posture and a $5/pass cap.
+**K-CACHE vital, interpreted and recorded (not gamed):** DeepSeek reports
+cache hit/miss in tokens, so total hit share on unique ~13K-token chunks is
+arithmetically capped near prefix/(prefix+chunk) ~ 11-16%. The spec's ">=60%
+or build bug" is measured as PREFIX-HIT EFFICIENCY (calls whose hits cover
+>=75% of the frozen ~1,555-token prefix): **99%** — the shaping law works.
+Both numbers are always reported. Operator may want to reconcile spec section
+1 PS-4's wording with section 6's "~30-40% hit share" economics note.
 
-## Deviations (all blessed via RATIFIED.md item 2, or recorded here)
+**S2 gate remaining (spec: "cards + fence-checked spans on two real
+collections"):**
+1. Span fence-check utility over cards (quote offsets vs tape text) — the
+   P6-style verification the gate pulls forward. Not yet built.
+2. A second collection end-to-end (candidate: any small folder -> intake ->
+   discover -> freeze -> read; operator granted "anywhere on C:\" latitude).
+3. Full-corpus read of corpus #1: ~1.717B tokens remaining ~ $240-280 + a
+   long weekend of wall-clock at current pacing. **Blocked on operator:
+   DeepSeek balance is ~$8.1 after this session ($17.31 - $9.19 session
+   spend). Top up, then `scriptorium.cmd read C:\_DAD\projects-mirror-archive
+   --cap <N>` — resume picks up exactly where the slice stopped.**
 
-- docx via stdlib zip+xml (chunker has no clean full-text CLI mode).
-- Discovery walk-primary; `everything` as reconciliation cross-check.
-- whisper silence hallucination ("You") taped faithfully as organ output;
-  exit-4 no-speech covered by deterministic unit.
-- P1 sampling unit = tape text record (<=32k chars ~ chunk budget); the chunker
-  organ enters at P2/S2 as spec'd.
-- Model fingerprint from the API is the alias "deepseek-v4-flash" (not a dated
-  version string); PS-9 still functions as change detection.
+Session spend total: **$9.19** (S1 run1 $1.64 + S1 run2 $0.91 + P2 slice
+$6.63 + smokes <$0.01).
 
-## Parked (wishes, not blockers)
+## Observations for the next session
 
-- **Baidu Unlimited-OCR (hf.co/baidu/Unlimited-OCR) as the S2+ OCR engine
-  candidate** (operator surfaced 2026-07-31): DeepEncoder + 3B-MoE-A570M +
-  R-SWA, dedicated long-horizon document OCR; likely 10-50x our current
-  45-100s/image llama.cpp path. No llama.cpp support -> own venv + torch +
-  ~50-line OpenAI-compatible shim behind the existing local.py seam (it is
-  engine-agnostic by design; a swap = new extractor fingerprint = rescan the
-  negatives, spec section 5). Verify before adopting: license,
-  trust_remote_code surface, Windows-torch cleanliness, VRAM, output contract
-  (their fixed format -> our {text, regions, confidence_hint} envelope in the
-  shim). Adoption falsifier: both engines over the same golden scanned pages,
-  verbatim fidelity + wall-clock, winner takes the fingerprint.
-- Read-only Tape.open mode (no boot repair/lock write) so `status`/`discover`
-  can safely run DURING an intake; today: don't open a tape a writer holds.
-- Session-jsonl content extractor (messages' text out of the envelope) as a
-  future intake modality refinement — would shrink this corpus ~3-5x and clean
-  the register; a re-derive under version law, not a mid-corpus mutation.
-- Walk on_error journaling (unreadable dirs are a consistent blind spot);
-  aggregated exclusion journaling; LSH banding for near-dup at larger scale;
-  tape kind-index sidecar to avoid full scans in scan_tape/fetch_texts (two
-  ~4.3GB passes per discover today, ~2-4 min each); OCR latency tuning;
-  PyYAML full-syntax manifests.
-- 8/152 induction batches + 2/120 shards quarantined typed in live run 2 —
-  acceptable; worth a glance at ds_calls.jsonl before S2 to see if they share
-  a shape (they carry full reasoning_content in the run journal).
+- Calibration variance: 8-shard rotating subsets swing hard (0.702 vs 0.571,
+  full-set mean 0.676). For the full read: larger or fixed calibration subset
+  (16-24 shards), and consider a variance-aware band rather than a hard floor.
+- Batches 30-40 ran ~5 min each (retry-heavy chunks; 22 quarantines total are
+  json-hostile transcript chunks — the run journal ds_calls.jsonl has full
+  reasoning_content for diagnosis). Consider: per-call max_tokens bump for
+  P2 (some chunks likely exhausted 6000 with dense cards), and a
+  --retry-quarantined flag.
+- charter baseline shows "None" in calibration lines (scoring lives in
+  charter.yaml, not charter.lock) — cosmetic, fix when touching read.py.
+- Embedding truncation: vectors embed chunk[:8000] chars (sidecar ctx
+  safety) — document/decide before the resident-skeleton stage cares.
+- Parked from earlier (still live): Baidu Unlimited-OCR S2+ eval plan ·
+  read-only Tape.open · session-jsonl content extractor (would cut this
+  corpus ~3-5x for a v2 catalog) · walk on_error journaling · LSH banding ·
+  tape kind-index sidecar (scan_tape does 2 full 4.3GB passes per pass-run) ·
+  OCR latency tuning · PyYAML.
+- OCR sidecar (:8091) and embed sidecar (:8092) may still be resident;
+  attach case finds them, or kill to free ~8GB VRAM.
 
 ## BLOCKED
 
-(nothing)
+- Full-corpus P2: operator top-up (see above). Nothing else.
 
 ## Next session's first move
 
-Read this file, RATIFIED.md, spec section 4 P2 + section 7 S2. Build `read`
-(P2 first reading): chunker-organ chunking at budget 8000 (breadcrumbs ->
-card context headers), the frozen charter as the byte-identical system prefix
-(PS-4; expect >=60% hit rate — run 2 measured 91% on the goldens fan-out),
-non-thinking t=0 JSON cards via ds.py, calibration shards interleaved every
-N=50 batches with halt-on-drift, resume via run journal, budget estimate from
-the census (1.75B tokens -> roughly $250-300 in at miss rates; the cache +
-the 4213-dedup fold and near-dup structure will pull it down; operator cap
-decision per pass), local embeddings via the :8092 sidecar (un-gate
-EmbedSidecar; qwen3-embedding-0.6b pinned in the lock), SQLite FTS5+vector
-index under catalog\. Falsifiers (spec S2): kill mid-pass -> resume zero
-dupes/gaps; hit-rate < 60% = prompt-shape bug; deliberately drill one
-calibration-drift halt. The OCR sidecar may still be running on :8091;
-harmless. DEEPSEEK_API_KEY is in .env; the scriptorium_cc key is repo-scoped
-and the operator deactivates it when the build-out ends.
+Read this file + RATIFIED.md. Then either (a) operator topped up -> launch the
+full read (background, capped, resumable; consider calibration-subset fix
+first), or (b) close the S2 gate cheaply: build the span fence-check utility
+(cards' quote offsets vs tape text — deterministic, no LLM) and run the second
+collection end-to-end on a small real folder. Then S3 (`map` + `reread`).
+DEEPSEEK_API_KEY in .env; scriptorium_cc key is repo-scoped; operator
+deactivates it when the build-out ends.
