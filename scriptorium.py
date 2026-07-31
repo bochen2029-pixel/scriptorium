@@ -23,8 +23,6 @@ def _utf8_console() -> None:
 
 
 RUNG_STUBS = {
-    "discover": ("S1", "P1 schema discovery (charter + golden shards)"),
-    "freeze": ("S1", "operator ratification -> charter fingerprints lock"),
     "read": ("S2", "P2 first reading (cards, calibration, budget meter)"),
     "map": ("S3", "P3 cartography (registry, threads, eras, contradictions)"),
     "reread": ("S3", "P4 second reading (the hermeneutic fixed point)"),
@@ -211,7 +209,9 @@ def main(argv: list[str] | None = None) -> int:
     for name, help_ in (("plan", "preflight + discovery census, no writes"),
                         ("intake", "P0: build/extend the Tape under the archive root"),
                         ("resume", "alias of intake (it skips completed work)"),
-                        ("status", "tape state, last reconciliation + census")):
+                        ("status", "tape state, last reconciliation + census"),
+                        ("discover", "P1: sample the Tape, propose the charter + goldens"),
+                        ("freeze", "verify the S1 falsifier, fingerprint the charter")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("target", help="archive root dir or manifest path")
         if name == "intake" or name == "resume":
@@ -221,6 +221,15 @@ def main(argv: list[str] | None = None) -> int:
         if name == "status":
             p.add_argument("--verify", action="store_true",
                            help="recompute the full hash chain")
+        if name == "discover":
+            p.add_argument("--cap", type=float, default=5.0,
+                           help="usd_cap for the pass (PS-8; default 5.00)")
+            p.add_argument("--goldens", type=int, default=120)
+            p.add_argument("--defects", type=int, default=12)
+            p.add_argument("--sample-tokens", type=int, default=None)
+            p.add_argument("--seed", type=int, default=20260731)
+            p.add_argument("--rescore-only", action="store_true",
+                           help="re-run goldens QC against the existing charter")
 
     for name in RUNG_STUBS:
         sub.add_parser(name, help=f"[{RUNG_STUBS[name][0]}] {RUNG_STUBS[name][1]}")
@@ -234,6 +243,19 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_intake(args.target, launch_ocr=not args.no_launch_ocr, quiet=args.quiet)
     if args.cmd == "status":
         return cmd_status(args.target, do_verify=args.verify)
+    if args.cmd == "discover":
+        import asyncio
+
+        from discover import run_discover
+        asyncio.run(run_discover(
+            args.target, usd_cap=args.cap, sample_tokens=args.sample_tokens,
+            goldens_n=args.goldens, defects_n=args.defects, seed=args.seed,
+            rescore_only=args.rescore_only))
+        return 0
+    if args.cmd == "freeze":
+        from discover import run_freeze
+        run_freeze(args.target)
+        return 0
     rung, what = RUNG_STUBS[args.cmd]
     print(f"`{args.cmd}` is rung {rung} ({what}).\n"
           f"This build is rung S0 (the Tape). One rung per session, "

@@ -27,16 +27,17 @@ def test_ocr_roundtrip_and_fingerprint(ocr_stub):
     assert fp["prompt_blake2b128"] == LOCK["prompts"]["ocr_contract_v0"]["blake2b128"]
 
 
-def test_ocr_prompt_is_the_frozen_contract():
-    """The prompt on disk is byte-for-byte the one the lock pins."""
+def test_prompts_are_the_frozen_contracts():
+    """Every prompt on disk is byte-for-byte the one the lock pins."""
     import canon
-    rel = LOCK["prompts"]["ocr_contract_v0"]["file"]
-    data = (Path(__file__).parent.parent / rel).read_bytes()
-    assert canon.blake2b128_hex(data) == LOCK["prompts"]["ocr_contract_v0"]["blake2b128"]
-    text = data.decode("utf-8")
+    for name, spec in LOCK["prompts"].items():
+        data = (Path(__file__).parent.parent / spec["file"].replace("\\\\", "\\")).read_bytes()
+        assert canon.blake2b128_hex(data) == spec["blake2b128"], \
+            f"prompt {name} drifted from its lock pin"
+    ocr = (Path(__file__).parent.parent / "prompts" / "ocr_contract_v0.txt").read_text("utf-8")
     for required in ("verbatim", "reading order", "[table]", "[handwritten]",
                      "⟨?", "json", "confidence_hint"):
-        assert required in text, f"frozen OCR contract lost clause: {required}"
+        assert required in ocr, f"frozen OCR contract lost clause: {required}"
 
 
 def test_ocr_shape_degradation(ocr_stub):

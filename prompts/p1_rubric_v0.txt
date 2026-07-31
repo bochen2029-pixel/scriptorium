@@ -1,0 +1,9 @@
+You are the charter author of SCRIPTORIUM. Given the merged ontology of an archive (JSON) and a few representative excerpts, author two documents:
+
+1. rubric_md — "rubric_P2.md": the frozen instructions a stateless extraction worker will follow for EVERY chunk of this corpus at the first reading. It must specify: the Card fields (entities with kinds and aliases; claims as subject/predicate/object/polarity/confidence/time tuples; verbatim quotes worth keeping; topics from the ontology's theme vocabulary; style fingerprint; retelling candidates); the extraction discipline (verbatim over paraphrase; the subject's own words are the artifact; every claim grounded in the chunk; polarity -1 for denials; confidence honest, not polite; time only when the chunk states or clearly implies it); what NOT to extract (boilerplate, tool noise, generic pleasantries); and how to use this archive's specific ontology vocabulary. Write it as a tight, numbered instruction document addressed to the worker, under 900 words.
+
+2. prior_md — "prior.md": the compression prior — an explicit statement of what matters most in THIS archive when compressing (whose voice, which themes, what kinds of detail are load-bearing vs droppable), derived from the ontology and summary. Under 300 words. Compression is never neutral; this document is the named editorial bias.
+
+Return strict json, one object, no markdown fences:
+{"rubric_md": "...", "prior_md": "..."}
+Example: {"rubric_md": "# rubric_P2 v1\n\n1. ...", "prior_md": "# compression prior\n\n..."}

@@ -1,0 +1,12 @@
+TASK: Extract one Card from the chunk below, following the rubric above exactly.
+
+Output rules (mechanical):
+- spans and quote offsets are character offsets into the chunk text as given (0-based, end exclusive); if unsure of an offset, use -1 rather than guessing.
+- polarity: +1 asserts, -1 denies. confidence: 0.0-1.0, honest.
+- topics: prefer the ontology's own theme names.
+- retelling_candidates: short strings naming any episode/story this chunk retells or references.
+- If the chunk is pure tool noise or boilerplate, return empty lists and say why in "notes".
+
+Return strict json, one object, no markdown fences:
+{"entities": [{"name": "...", "kind": "person|org|project|tool|place|work|concept|other", "aliases": []}], "claims": [{"subject": "...", "predicate": "...", "object": null, "polarity": 1, "confidence": 0.9, "time": null, "span": {"start": 0, "end": 10}}], "quotes": [{"text": "...", "start": 0, "end": 10}], "topics": ["..."], "style": {"voice": "...", "language": "en"}, "retelling_candidates": [], "notes": null}
+Example: {"entities": [{"name": "cortex", "kind": "project", "aliases": []}], "claims": [{"subject": "operator", "predicate": "decided to pin", "object": "DeepSeek V4 Flash", "polarity": 1, "confidence": 0.95, "time": "2026-07-31", "span": {"start": 12, "end": 88}}], "quotes": [{"text": "the negatives are forever", "start": 100, "end": 125}], "topics": ["sovereignty"], "style": {"voice": "engineering log", "language": "en"}, "retelling_candidates": [], "notes": null}

@@ -90,6 +90,26 @@
     "ocr_contract_v0": {
       "file": "prompts\\ocr_contract_v0.txt",
       "blake2b128": "6324ce5ee3fcf56642f7b1b6b618e7ef"
+    },
+    "p1_induce_v0": {
+      "file": "prompts\\p1_induce_v0.txt",
+      "blake2b128": "8c3a101e8e8f4f39c83f907943e174f0"
+    },
+    "p1_merge_v0": {
+      "file": "prompts\\p1_merge_v0.txt",
+      "blake2b128": "d63bd4b5d53e408ec354fffd5f148c19"
+    },
+    "p1_rubric_v0": {
+      "file": "prompts\\p1_rubric_v0.txt",
+      "blake2b128": "f174d08715d836197533595b1d676839"
+    },
+    "p1_refcard_v0": {
+      "file": "prompts\\p1_refcard_v0.txt",
+      "blake2b128": "749ff3997c4557f7ea405001500399ce"
+    },
+    "p1_synthesis_v0": {
+      "file": "prompts\\p1_synthesis_v0.txt",
+      "blake2b128": "4529b2fb32c0c37ae318a9805ddd51ea"
     }
   },
 
