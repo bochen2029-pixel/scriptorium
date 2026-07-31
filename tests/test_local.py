@@ -4,10 +4,8 @@ R-class fingerprint stamped, typed degradation; the :8092 embedding seam refuses
 import json
 from pathlib import Path
 
-import pytest
-
 from conftest import STUB_OCR_TEXT, fresh_dir, make_png
-from local import EmbedSidecar, OcrSidecar, RungGate
+from local import EmbedSidecar, OcrSidecar
 
 LOCK = json.loads((Path(__file__).parent.parent / "scriptorium.lock").read_text("utf-8"))
 
@@ -58,6 +56,12 @@ def test_ocr_down_and_no_launch(monkeypatch):
     side.close()
 
 
-def test_embedding_seam_is_gated():
-    with pytest.raises(RungGate, match="S2"):
-        EmbedSidecar().embed(["x"])
+def test_embedding_seam_attach_only(monkeypatch):
+    """S2 wired the :8092 seam; with a dead env URL it attaches-or-declines,
+    never launches."""
+    monkeypatch.setenv("SCRIPTORIUM_EMBED_URL", "http://127.0.0.1:9")
+    side = EmbedSidecar()
+    assert side.ensure(launch=True) is False
+    fp = side.fingerprint()
+    assert fp["embedder"].endswith(".gguf") and fp["model_blake2b256"]
+    side.close()

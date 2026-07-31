@@ -117,7 +117,7 @@ class _P1Stub(BaseHTTPRequestHandler):
         user = req["messages"][-1]["content"]
         if user.startswith("Warm-up"):
             content = "ready"
-        elif user.startswith("CHUNK:"):
+        elif "CHUNK:" in user[:400]:          # bare (P1) or doc-header-prefixed (P2)
             content = json.dumps(CANNED_CARD)
         elif user.startswith("[{"):
             content = json.dumps({**CANNED_ONTOLOGY,

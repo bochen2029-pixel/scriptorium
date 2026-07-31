@@ -61,12 +61,13 @@ class RecRow:
     modality: str = ""
 
 
-def scan_tape(root: Path) -> tuple[list[RecRow], int]:
+def scan_tape(root: Path) -> tuple[list[RecRow], int, dict[str, dict[str, Any]]]:
     """One streaming pass: text-record rows joined with their doc's metadata.
     Rows belonging to docs that never completed are dropped (partial docs)."""
     tape = Tape.open(root)
     rows: dict[str, list[RecRow]] = {}
     kept: list[RecRow] = []
+    doc_meta: dict[str, dict[str, Any]] = {}
     try:
         for rec in tape.iter_records():
             b = rec["body"]
@@ -77,12 +78,15 @@ def scan_tape(root: Path) -> tuple[list[RecRow], int]:
             elif rec["kind"] == "doc":
                 doc_rows = rows.pop(b["doc_id"], [])
                 project = b["path"].split("/", 1)[0]
+                doc_meta[b["doc_id"]] = {"path": b["path"], "year": b["year"],
+                                         "project": project, "modality": b["modality"],
+                                         "source": b["source"]}
                 for r in doc_rows:
                     r.year, r.project, r.modality = b["year"], project, b["modality"]
                 kept.extend(doc_rows)
     finally:
         tape.close()
-    return kept, sum(r.tokens for r in kept)
+    return kept, sum(r.tokens for r in kept), doc_meta
 
 
 def fetch_texts(root: Path, wanted: set[tuple[str, int]]) -> dict[tuple[str, int], str]:
@@ -317,7 +321,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
             return await _rescore(client, root, charter, say)
 
         say(f"[{run_id}] scanning tape under {root} ...")
-        rows, corpus_tokens = scan_tape(root)
+        rows, corpus_tokens, _doc_meta = scan_tape(root)
         say(f"  {len(rows)} text records, {corpus_tokens:,} tokens census")
         budget = sample_tokens or min(max(int(corpus_tokens * 0.02), 200_000), 6_000_000)
         sampled = stratified_sample(rows, budget, seed)

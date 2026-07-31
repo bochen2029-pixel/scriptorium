@@ -23,7 +23,6 @@ def _utf8_console() -> None:
 
 
 RUNG_STUBS = {
-    "read": ("S2", "P2 first reading (cards, calibration, budget meter)"),
     "map": ("S3", "P3 cartography (registry, threads, eras, contradictions)"),
     "reread": ("S3", "P4 second reading (the hermeneutic fixed point)"),
     "synthesize": ("S4", "P5 codex (ledgers, dossiers, concordance, atlas)"),
@@ -213,7 +212,8 @@ def main(argv: list[str] | None = None) -> int:
                         ("resume", "alias of intake (it skips completed work)"),
                         ("status", "tape state, last reconciliation + census"),
                         ("discover", "P1: sample the Tape, propose the charter + goldens"),
-                        ("freeze", "verify the S1 falsifier, fingerprint the charter")):
+                        ("freeze", "verify the S1 falsifier, fingerprint the charter"),
+                        ("read", "P2: the first reading — cards under the frozen charter")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("target", help="archive root dir or manifest path")
         if name == "intake" or name == "resume":
@@ -232,6 +232,15 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--seed", type=int, default=20260731)
             p.add_argument("--rescore-only", action="store_true",
                            help="re-run goldens QC against the existing charter")
+        if name == "read":
+            p.add_argument("--cap", type=float, default=10.0,
+                           help="usd_cap for the pass (PS-8; default 10.00)")
+            p.add_argument("--projects", type=str, default=None,
+                           help="comma-separated project globs (slice selector)")
+            p.add_argument("--max-tokens", type=int, default=None,
+                           help="hard token ceiling for the slice")
+            p.add_argument("--no-embed", action="store_true",
+                           help="skip the :8092 embedding sidecar (backfill later)")
 
     for name in RUNG_STUBS:
         sub.add_parser(name, help=f"[{RUNG_STUBS[name][0]}] {RUNG_STUBS[name][1]}")
@@ -257,6 +266,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "freeze":
         from discover import run_freeze
         run_freeze(args.target)
+        return 0
+    if args.cmd == "read":
+        import asyncio
+
+        from read import run_read
+        asyncio.run(run_read(
+            args.target, usd_cap=args.cap,
+            projects=args.projects.split(",") if args.projects else None,
+            max_tokens=args.max_tokens, embed=not args.no_embed))
         return 0
     rung, what = RUNG_STUBS[args.cmd]
     print(f"`{args.cmd}` is rung {rung} ({what}).\n"

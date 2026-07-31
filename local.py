@@ -28,6 +28,8 @@ import httpx
 
 from organs import CODE_DIR, load_lock
 
+__all__ = ["OcrSidecar", "EmbedSidecar", "OcrUnavailable", "OcrFailed", "RungGate"]
+
 
 class OcrUnavailable(RuntimeError):
     pass
@@ -156,12 +158,61 @@ class OcrSidecar:
 
 
 class EmbedSidecar:
-    """The :8092 seam, stubbed by design at S0 (spec section 7: S2 wires it)."""
+    """The :8092 seam — local embeddings (spec section 2), wired at S2.
+    Same attach-or-launch pattern as OCR; llama-server --embedding on the
+    pinned qwen3-embedding gguf. Vectors never leave the box."""
 
     def __init__(self) -> None:
-        self.cfg = load_lock()["sidecars"]["embedding"]
+        lock = load_lock()
+        self.cfg = lock["sidecars"]["embedding"]
+        self.exe = lock["sidecars"]["ocr"]["exe"]          # same llama-server binary
+        self.url = os.environ.get("SCRIPTORIUM_EMBED_URL",
+                                  f"http://127.0.0.1:{self.cfg['port']}").rstrip("/")
+        self._client = httpx.Client(timeout=httpx.Timeout(300.0, connect=5.0))
+        self._launched: subprocess.Popen | None = None
 
-    def embed(self, texts: list[str]) -> None:
-        raise RungGate(
-            f"embedding sidecar (:{self.cfg['port']}) is {self.cfg['status']}; "
-            "rung S2 wires it — this build is S0")
+    def healthy(self) -> bool:
+        try:
+            return self._client.get(f"{self.url}/health").status_code == 200
+        except httpx.HTTPError:
+            return False
+
+    def ensure(self, launch: bool = True) -> bool:
+        if self.healthy():
+            return True
+        if not launch or os.environ.get("SCRIPTORIUM_EMBED_URL"):
+            return False
+        exe, model = Path(self.exe), Path(self.cfg["model"])
+        if not (exe.exists() and model.exists()):
+            return False
+        log_dir = CODE_DIR / "_local"
+        log_dir.mkdir(exist_ok=True)
+        log = open(log_dir / f"embed-{self.cfg['port']}.log", "ab")
+        self._launched = subprocess.Popen(
+            [str(exe), "-m", str(model), "--embedding", "--host", "127.0.0.1",
+             "--port", str(self.cfg["port"]), "-ngl", "99"],
+            stdout=log, stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+        )
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            if self.healthy():
+                return True
+            if self._launched.poll() is not None:
+                return False
+            time.sleep(2.0)
+        return False
+
+    def fingerprint(self) -> dict[str, Any]:
+        return {"embedder": Path(self.cfg["model"]).name,
+                "model_blake2b256": self.cfg["model_blake2b256"], "url": self.url}
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        r = self._client.post(f"{self.url}/v1/embeddings",
+                              json={"model": "qwen3-embedding", "input": texts})
+        r.raise_for_status()
+        data = r.json()["data"]
+        return [d["embedding"] for d in sorted(data, key=lambda d: d.get("index", 0))]
+
+    def close(self) -> None:
+        self._client.close()
