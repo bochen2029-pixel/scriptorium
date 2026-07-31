@@ -58,6 +58,7 @@ from tape import Tape
 PDF_TEXT_FLOOR = 25          # chars; below this + an embedded image = scanned page
 PDF_OCR_DPI = 150
 NEAR_DUP_THRESHOLD = 0.6
+NEAR_DUP_FLAG_CAP = 5        # flag only the top-K most similar priors per doc
 HASH_CHUNK = 1 << 23
 
 TEXT_EXTS = {
@@ -499,10 +500,21 @@ class IntakeRun:
             else:
                 work.append(e)
 
-        work.sort(key=lambda e: (e.abspath.suffix.lower() in AV_EXTS, e.root, e.rel))
-        n_av = sum(1 for e in work if e.abspath.suffix.lower() in AV_EXTS)
-        if n_av:
-            self.say(f"{n_av} AV file(s) queued to the slow lane (earshot, last)")
+        # cost lanes: cheap text first, then pdf (possible OCR), images, AV last —
+        # a slow scanned PDF must never stall thousands of text files behind it
+        def lane(e: FileEntry) -> int:
+            ext = e.abspath.suffix.lower()
+            if ext == ".pdf":
+                return 1
+            if ext in IMAGE_EXTS:
+                return 2
+            if ext in AV_EXTS:
+                return 3
+            return 0
+        work.sort(key=lambda e: (lane(e), e.root, e.rel))
+        n_slow = sum(1 for e in work if lane(e))
+        if n_slow:
+            self.say(f"{n_slow} file(s) queued to slow lanes (pdf/image/av, after text)")
 
         for e in work:
             self._process(tape, ex, e)
@@ -615,17 +627,25 @@ class IntakeRun:
             self.state.sigs[doc_id] = sig
 
     def _flag_near_dups(self, tape: Tape, doc_id: str, sig: list[int]) -> None:
-        for other_id, other_sig in self.state.sigs.items():
-            j = minhash.jaccard_est(sig, other_sig)
-            if j >= NEAR_DUP_THRESHOLD:
-                self.counts["near_dup_flags"] += 1
-                other = self.state.doc_meta.get(other_id, {})
-                self._tape_journal(tape, {
-                    "event": "near_dup_flag", "run_id": self.run_id,
-                    "doc_id": doc_id, "other_doc_id": other_id,
-                    "other_path": other.get("path"), "jaccard_est": round(j, 3)})
-                self.say(f"  near-dup flagged (j~{j:.2f}) vs {other.get('path')}"
-                         " — kept, cross-referenced")
+        hits = sorted(
+            ((minhash.jaccard_est(sig, other_sig), other_id)
+             for other_id, other_sig in self.state.sigs.items()),
+            reverse=True)
+        items: list[tuple[str, dict[str, Any]]] = []
+        for j, other_id in hits[:NEAR_DUP_FLAG_CAP]:
+            if j < NEAR_DUP_THRESHOLD:
+                break
+            self.counts["near_dup_flags"] += 1
+            other = self.state.doc_meta.get(other_id, {})
+            items.append(("journal", JournalBody(
+                event="near_dup_flag", run_id=self.run_id,
+                doc_id=doc_id, other_doc_id=other_id,
+                other_path=other.get("path"),
+                jaccard_est=round(j, 3)).model_dump()))
+            self.say(f"  near-dup flagged (j~{j:.2f}) vs {other.get('path')}"
+                     " — kept, cross-referenced")
+        if items:                       # one fsync'd batch per doc, capped at K
+            tape.append_many(items)
 
     def _quarantine(self, tape: Tape, e: FileEntry, reason: str, detail: str,
                     content_b2: str) -> None:
