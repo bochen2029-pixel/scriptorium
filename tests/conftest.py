@@ -201,3 +201,47 @@ def wait_for(predicate, timeout: float, interval: float = 0.05) -> bool:
             return True
         time.sleep(interval)
     return False
+
+
+# -- speech fixtures (Windows TTS + ffmpeg; used by the AV lane test + demo) --
+
+def make_tts_wav(path: Path, text: str) -> bool:
+    """Synthesize real speech with System.Speech; False when TTS is unavailable."""
+    import subprocess
+    script = (
+        "Add-Type -AssemblyName System.Speech; "
+        "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+        f"$s.SetOutputToWaveFile('{path}'); "
+        f"$s.Speak('{text}'); $s.Dispose()")
+    try:
+        cp = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                            capture_output=True, timeout=120)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return cp.returncode == 0 and path.exists() and path.stat().st_size > 1000
+
+
+def make_silent_wav(path: Path, seconds: float = 1.0) -> bool:
+    import subprocess
+    try:
+        cp = subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
+             "-t", str(seconds), str(path)],
+            capture_output=True, timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return cp.returncode == 0 and path.exists()
+
+
+def make_speech_video(mp4: Path, wav: Path, png: Path) -> bool:
+    """One still frame + the speech track = the falsifier's 'one short video'."""
+    import subprocess
+    try:
+        cp = subprocess.run(
+            ["ffmpeg", "-y", "-loop", "1", "-i", str(png), "-i", str(wav),
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+             "-shortest", str(mp4)],
+            capture_output=True, timeout=120)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return cp.returncode == 0 and mp4.exists()

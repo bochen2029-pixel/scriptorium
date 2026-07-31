@@ -106,10 +106,10 @@ class OcrSidecar:
         }
 
     # -- the call ---------------------------------------------------------
-    def ocr_image(self, png_path: Path) -> dict[str, Any]:
+    def ocr_image(self, png_path: str | Path) -> dict[str, Any]:
         """One image -> {text, regions, confidence_hint, fp}. Retries once; a
         JSON-shaped failure degrades to raw text with a typed note, never a guess."""
-        b64 = base64.b64encode(png_path.read_bytes()).decode("ascii")
+        b64 = base64.b64encode(Path(png_path).read_bytes()).decode("ascii")
         payload = {
             "model": "qwen3.5-9b",
             "temperature": 0,
