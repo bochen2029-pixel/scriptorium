@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "pinned_at": "2026-07-31",
+  "comment": "Constitutional pins (spec section 5). Organs are called at these fixed paths as subprocesses, never imported. A hash mismatch is a version change: new catalog version, never a mid-pass mutation.",
+
+  "organs": {
+    "everything": {
+      "path": "C:\\everything\\search.py",
+      "script_blake2b128": "2eab54d2745afc40e19d57546e5c89a7",
+      "engine": "Everything 1.4.1.1026 via ES 1.1.0.30",
+      "role": "discovery cross-check + big-archive locator"
+    },
+    "everywhere": {
+      "path": "C:\\everywhere",
+      "engine": "GPU content-grep, stages 0-4 green 2026-07-12",
+      "role": "P6 raw-byte verifier of last resort (unused at S0 runtime)"
+    },
+    "chunker": {
+      "path": "C:\\chunker\\chunker.py",
+      "script_blake2b128": "c10e24c5bea9c66d4fbd3ac0e2a6da44",
+      "estimate_tokens": "C:\\chunker\\estimate_tokens.py",
+      "estimate_tokens_blake2b128": "b52ddcfd23e884b719c1f94aa1397696",
+      "role": "token census cross-check (S0); pass chunking (S2+)"
+    },
+    "imguard": {
+      "path": "C:\\imguard\\imguard.py",
+      "script_blake2b128": "2e5ec7e49209f08bf05357f8be29f0f0",
+      "role": "image preflight before every vision call (spec section 2)"
+    },
+    "earshot": {
+      "path": "C:\\earshot\\earshot.py",
+      "script_blake2b128": "69d78cb1f5f786fc33cb8f4f008f6ed9",
+      "engine": "whisper.cpp at C:\\whisper.cpp",
+      "role": "ASR slow lane; audio never leaves the box"
+    }
+  },
+
+  "sidecars": {
+    "ocr": {
+      "port": 8091,
+      "exe": "C:\\llama.cpp\\llama-server.exe",
+      "model": "C:\\models\\Qwen3.5-9B-Q5_K_M.gguf",
+      "model_blake2b256": "7553c9770716659139d0061f0b598673564cc1fe73d02634cad7b72235297cde",
+      "model_bytes": 6577841376,
+      "mmproj": "C:\\models\\mmproj-F16.gguf",
+      "mmproj_blake2b256": "60aa8b1e65c2bbf8fbe3010c5f45724b00138e71b8b26648685085e43cb9fdc3",
+      "mmproj_bytes": 921704544,
+      "launch_args": ["--host", "127.0.0.1", "--port", "8091", "-ngl", "99"],
+      "health_timeout_s": 300
+    },
+    "embedding": {
+      "port": 8092,
+      "status": "stubbed-until-S2",
+      "model": "C:\\models\\qwen3-embedding-0.6b-q8_0.gguf",
+      "model_blake2b256": "8be66877a9f2fddfe64ed6ceb87044cac4f874af2c9cbc583aa598e252ae8ae4",
+      "model_bytes": 639150592
+    }
+  },
+
+  "provider": {
+    "model": "deepseek-v4-flash",
+    "base_url": "https://api.deepseek.com",
+    "price_sheet_usd_per_mtok": {
+      "input_cache_miss": 0.14,
+      "input_cache_hit": 0.0028,
+      "output": 0.28,
+      "pinned": "2026-07-31"
+    },
+    "context_window": 1000000,
+    "max_output": 384000,
+    "concurrency_limit": 2500,
+    "peak_windows_beijing": [["09:00", "12:00"], ["14:00", "18:00"]],
+    "note": "S0 makes zero API calls; this block exists so PS-8's meter has pinned prices from day one."
+  },
+
+  "chunking": {
+    "budget_content_tokens": 8000,
+    "budget_range": [2000, 32000]
+  },
+
+  "tape": {
+    "canon": "CANON-JSON-v1",
+    "hash": "blake2b-128 over ascii(prev_h) || CANON-JSON(record)",
+    "genesis": "00000000000000000000000000000000",
+    "segment_max_bytes": 67108864,
+    "text_block_max_chars": 32000
+  },
+
+  "prompts": {
+    "ocr_contract_v0": {
+      "file": "prompts\\ocr_contract_v0.txt",
+      "blake2b128": "6324ce5ee3fcf56642f7b1b6b618e7ef"
+    }
+  },
+
+  "charter": {
+    "status": "unfrozen-until-S1",
+    "rubric_v": null,
+    "ontology_v": null
+  },
+
+  "canon_vectors": {
+    "serialization": [
+      {"name": "empty", "input": {}, "canon": "{}", "blake2b128": "2afb9b83f9314e5d029766197f539792"},
+      {"name": "sorted", "input": {"b": 1, "a": 2}, "canon": "{\"a\":2,\"b\":1}", "blake2b128": "cf18a029e5a0c29229df0753ee807c70"},
+      {"name": "nfc", "input": {"s": "cafe\u0301"}, "canon": "{\"s\":\"caf\u00e9\"}", "blake2b128": "094a62d081999fa7f63cf9f177720340"},
+      {"name": "floats", "input": {"f": [0.1, 1e300, -0.0, 2.5]}, "canon": "{\"f\":[0.1,1e+300,-0.0,2.5]}", "blake2b128": "6b65017baaab2c87763650ff50134f28"},
+      {"name": "scalars", "input": {"n": null, "t": true, "i": -7}, "canon": "{\"i\":-7,\"n\":null,\"t\":true}", "blake2b128": "159d54d0b5eabd91229d89a4b071d777"},
+      {"name": "nested", "input": {"z": [{"y": "\u00e9", "x": [1, 2]}], "a": "\u4e2d\u6587"}, "canon": "{\"a\":\"\u4e2d\u6587\",\"z\":[{\"x\":[1,2],\"y\":\"\u00e9\"}]}", "blake2b128": "9f34d97bcf411e10a17b4b1a69f10645"}
+    ],
+    "chain": {
+      "records": [
+        {"i": 0, "kind": "journal", "ts": "2026-07-31T00:00:00.000+00:00", "body": {"event": "genesis-test"}},
+        {"i": 1, "kind": "doc", "ts": "2026-07-31T00:00:00.000+00:00", "body": {"doc_id": "d-test"}}
+      ],
+      "h1": "378ea6f5fc8648eb7f10f58987d54c8c",
+      "h2": "2df3ee009ca749ec068819b107077a4c"
+    }
+  }
+}
