@@ -2,7 +2,6 @@
   "schema": 1,
   "pinned_at": "2026-07-31",
   "comment": "Constitutional pins (spec section 5). Organs are called at these fixed paths as subprocesses, never imported. A hash mismatch is a version change: new catalog version, never a mid-pass mutation.",
-
   "organs": {
     "everything": {
       "path": "C:\\everything\\search.py",
@@ -34,7 +33,6 @@
       "role": "ASR slow lane; audio never leaves the box"
     }
   },
-
   "sidecars": {
     "ocr": {
       "port": 8091,
@@ -45,7 +43,14 @@
       "mmproj": "C:\\models\\mmproj-F16.gguf",
       "mmproj_blake2b256": "60aa8b1e65c2bbf8fbe3010c5f45724b00138e71b8b26648685085e43cb9fdc3",
       "mmproj_bytes": 921704544,
-      "launch_args": ["--host", "127.0.0.1", "--port", "8091", "-ngl", "99"],
+      "launch_args": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8091",
+        "-ngl",
+        "99"
+      ],
       "health_timeout_s": 300
     },
     "embedding": {
@@ -56,7 +61,6 @@
       "model_bytes": 639150592
     }
   },
-
   "provider": {
     "model": "deepseek-v4-flash",
     "base_url": "https://api.deepseek.com",
@@ -69,15 +73,25 @@
     "context_window": 1000000,
     "max_output": 384000,
     "concurrency_limit": 2500,
-    "peak_windows_beijing": [["09:00", "12:00"], ["14:00", "18:00"]],
+    "peak_windows_beijing": [
+      [
+        "09:00",
+        "12:00"
+      ],
+      [
+        "14:00",
+        "18:00"
+      ]
+    ],
     "note": "S0 makes zero API calls; this block exists so PS-8's meter has pinned prices from day one."
   },
-
   "chunking": {
     "budget_content_tokens": 8000,
-    "budget_range": [2000, 32000]
+    "budget_range": [
+      2000,
+      32000
+    ]
   },
-
   "tape": {
     "canon": "CANON-JSON-v1",
     "hash": "blake2b-128 over ascii(prev_h) || CANON-JSON(record)",
@@ -85,7 +99,6 @@
     "segment_max_bytes": 67108864,
     "text_block_max_chars": 32000
   },
-
   "prompts": {
     "ocr_contract_v0": {
       "file": "prompts\\ocr_contract_v0.txt",
@@ -112,26 +125,98 @@
       "blake2b128": "4529b2fb32c0c37ae318a9805ddd51ea"
     }
   },
-
   "charter": {
-    "status": "unfrozen-until-S1",
-    "rubric_v": null,
-    "ontology_v": null
+    "status": "frozen",
+    "archive": "C:\\_DAD\\projects-mirror-archive",
+    "rubric_v": "r1",
+    "ontology_v": "o1",
+    "root_fingerprint": "209ed2439de94905ebe99f7da60b2ffd",
+    "frozen_at": "2026-07-31T20:22:45+00:00"
   },
-
   "canon_vectors": {
     "serialization": [
-      {"name": "empty", "input": {}, "canon": "{}", "blake2b128": "2afb9b83f9314e5d029766197f539792"},
-      {"name": "sorted", "input": {"b": 1, "a": 2}, "canon": "{\"a\":2,\"b\":1}", "blake2b128": "cf18a029e5a0c29229df0753ee807c70"},
-      {"name": "nfc", "input": {"s": "cafe\u0301"}, "canon": "{\"s\":\"caf\u00e9\"}", "blake2b128": "094a62d081999fa7f63cf9f177720340"},
-      {"name": "floats", "input": {"f": [0.1, 1e300, -0.0, 2.5]}, "canon": "{\"f\":[0.1,1e+300,-0.0,2.5]}", "blake2b128": "6b65017baaab2c87763650ff50134f28"},
-      {"name": "scalars", "input": {"n": null, "t": true, "i": -7}, "canon": "{\"i\":-7,\"n\":null,\"t\":true}", "blake2b128": "159d54d0b5eabd91229d89a4b071d777"},
-      {"name": "nested", "input": {"z": [{"y": "\u00e9", "x": [1, 2]}], "a": "\u4e2d\u6587"}, "canon": "{\"a\":\"\u4e2d\u6587\",\"z\":[{\"x\":[1,2],\"y\":\"\u00e9\"}]}", "blake2b128": "9f34d97bcf411e10a17b4b1a69f10645"}
+      {
+        "name": "empty",
+        "input": {},
+        "canon": "{}",
+        "blake2b128": "2afb9b83f9314e5d029766197f539792"
+      },
+      {
+        "name": "sorted",
+        "input": {
+          "b": 1,
+          "a": 2
+        },
+        "canon": "{\"a\":2,\"b\":1}",
+        "blake2b128": "cf18a029e5a0c29229df0753ee807c70"
+      },
+      {
+        "name": "nfc",
+        "input": {
+          "s": "café"
+        },
+        "canon": "{\"s\":\"café\"}",
+        "blake2b128": "094a62d081999fa7f63cf9f177720340"
+      },
+      {
+        "name": "floats",
+        "input": {
+          "f": [
+            0.1,
+            1e+300,
+            -0.0,
+            2.5
+          ]
+        },
+        "canon": "{\"f\":[0.1,1e+300,-0.0,2.5]}",
+        "blake2b128": "6b65017baaab2c87763650ff50134f28"
+      },
+      {
+        "name": "scalars",
+        "input": {
+          "n": null,
+          "t": true,
+          "i": -7
+        },
+        "canon": "{\"i\":-7,\"n\":null,\"t\":true}",
+        "blake2b128": "159d54d0b5eabd91229d89a4b071d777"
+      },
+      {
+        "name": "nested",
+        "input": {
+          "z": [
+            {
+              "y": "é",
+              "x": [
+                1,
+                2
+              ]
+            }
+          ],
+          "a": "中文"
+        },
+        "canon": "{\"a\":\"中文\",\"z\":[{\"x\":[1,2],\"y\":\"é\"}]}",
+        "blake2b128": "9f34d97bcf411e10a17b4b1a69f10645"
+      }
     ],
     "chain": {
       "records": [
-        {"i": 0, "kind": "journal", "ts": "2026-07-31T00:00:00.000+00:00", "body": {"event": "genesis-test"}},
-        {"i": 1, "kind": "doc", "ts": "2026-07-31T00:00:00.000+00:00", "body": {"doc_id": "d-test"}}
+        {
+          "i": 0,
+          "kind": "journal",
+          "ts": "2026-07-31T00:00:00.000+00:00",
+          "body": {
+            "event": "genesis-test"
+          }
+        },
+        {
+          "i": 1,
+          "kind": "doc",
+          "ts": "2026-07-31T00:00:00.000+00:00",
+          "body": {
+            "doc_id": "d-test"
+          }
+        }
       ],
       "h1": "378ea6f5fc8648eb7f10f58987d54c8c",
       "h2": "2df3ee009ca749ec068819b107077a4c"

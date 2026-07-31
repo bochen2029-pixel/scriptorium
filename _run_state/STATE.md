@@ -1,143 +1,125 @@
 # scriptorium — run state
 
-**Rung: S0 (the Tape) — GREEN, 2026-07-31.** Next session starts S1 (charter:
-`discover` → operator `freeze`) unless RATIFIED.md says otherwise. Trust this
-file + git over any memory. 54 pytest green + ruff clean = the definition of
-green used throughout; every falsifier below was run for real, none simulated.
+**Rungs S0 (Tape) and S1 (Charter) — GREEN, 2026-07-31, one session.** Next
+session starts **S2 (first reading: `read`)**. Trust this file + git over any
+memory; RATIFIED.md holds the operator's standing delegation and decisions of
+record. 75 pytest green + ruff clean = the definition of green throughout;
+every number below is from a real run, none simulated.
 
-## Green (S0 definition of done, kickoff section 3)
+## S0 — the Tape (green; see git history for the falsifier detail)
 
-1. **Scaffold** — `scriptorium.py` (dispatch: plan/intake/status/resume real,
-   rest print their rung and refuse), `scriptorium.cmd` (NOTE: must stay CRLF —
-   LF-only endings break cmd.exe parsing; caught live), `pyproject.toml` (uv,
-   py>=3.12; deps pydantic v2 + httpx + PyMuPDF + optional tiktoken; dev
-   pytest+ruff), `scriptorium.lock` (organ paths + script hashes, gguf
-   blake2b-256 for Qwen3.5-9B/mmproj/embedder, Flash price sheet pinned
-   2026-07-31, chunk budget 8000 [2000,32000], CANON-JSON known-answer vectors,
-   OCR prompt hash), `.env.example`, `.gitignore`, `README.md` v0, git repo
-   (commits at each green milestone).
-2. **tape.py** — append-only JSONL segments (64 MiB roll), blake2b-128 chain
-   over CANON-JSON (`canon.py`: UTF-8, NFC, sorted keys, CPython
-   shortest-roundtrip float repr; NFC-collision + non-string-key + NaN
-   refusals), kinds doc|text|journal|contact, fsync'd batched appends,
-   `verify_tape()`, boot-time torn-tail repair (<=1 line, journaled as
-   `tape_repair`), crash roll-forward (fsync'd-but-unacknowledged lines are
-   adopted at open), corruption inside the acknowledged region refuses repair.
-3. **intake (P0)** — manifest.yaml via an in-house YAML-subset parser
-   (stdlib; PyYAML is off the S0 dependency list; manifest.json also accepted);
-   discovery = os.walk ground truth, `everything` runs as reconciliation
-   cross-check (fresh files can lag its index ~1s, so walk is primary — spec's
-   "everything where indexed" honored as the verifier role); gitignore-flavored
-   include/exclude globs; exact dedup (blake2b-256) + MinHash near-dup
-   flag-and-keep (128 perms, threshold 0.6, signature stored on the doc
-   record); routing text/pdf/docx/image/av + strict text-sniff for unknown
-   extensions; PDF text-layer first, low-density+image pages rendered 150 dpi
-   -> imguard -> local OCR, interleaved by page; span system {doc_id, seq,
-   start, end} = char offsets into NFC canonical text records (blocks <=32k
-   chars, deterministic split, property-tested lossless).
-4. **local.py** — attach-or-launch llama-server :8091 (`-ngl 99`), health
-   poll, frozen OCR contract prompt (prompts/ocr_contract_v0.txt, hash in
-   lock), R-class fingerprint (gguf+mmproj+prompt hashes) stamped on every OCR
-   block; JSON-shape failure degrades to raw text + typed note, never a guess;
-   :8092 embedding seam present and gated (`RungGate: S2`).
-5. **Reconciliation + contact sheet** — completeness measured by fresh
-   re-walk and printed + taped; census rows tokens x year x source x modality
-   as `contact` records; cross-check vs `estimate_tokens.py` on a sample.
-6. **Falsifiers, all green:**
-   (a) planted corpus (text/md, exact dup, near dup, text-PDF, scanned-image
-       PDF, hand-built docx, PNG, .tmp excluded, binary blob, real TTS speech
-       + silence wavs, real TTS video in the demo) — zero silently dropped;
-       every path ends doc/dedup/excluded/quarantined; 100.0% measured.
-   (b) one flipped byte in a copied tape -> `verify_tape` catches (and full
-       verify catches older-segment corruption boot-scan skips).
-   (c) kill-resume — real subprocess, hard kill mid-run, rerun: zero duplicate
-       records, zero gaps (doc unique, seqs contiguous), plus a deterministic
-       partial-doc continuation unit (texts fsync'd, doc record lost).
-   (d) import-graph — allowlist-closed (stdlib + pydantic/httpx/fitz/tiktoken/
-       pytest + own modules); organ names forbidden as imports; no sys.path
-       hacks.
-   (e) CANON-JSON known-answer vectors pinned in scriptorium.lock.
+Delivered: `canon.py` (CANON-JSON-v1 + blake2b-128 chain, KAVs pinned in
+scriptorium.lock) · `tape.py` (append-only segments, fsync'd batches, torn-tail
+repair <=1 line journaled, crash roll-forward, full verify; Windows
+lock-replace race found BY the kill-resume falsifier and fixed with bounded
+retry) · `intake.py` (P0: walk discovery + `everything` cross-check, exact
+dedup + strided-MinHash near-dup flag-and-keep (top-5/doc, batched), modality
+routing text/pdf/docx/image/av, cost-lane ordering, span system {doc_id, seq,
+start, end}) · `local.py` (:8091 attach-or-launch Qwen3.5-9B+mmproj OCR,
+frozen contract prompt, R-class fingerprints; :8092 gated until S2) ·
+`scriptorium.py` CLI + `scriptorium.cmd` (CRLF!) · falsifiers (a)-(e) green
+incl. real TTS speech/video through real earshot.
 
-## The S0 live demo (run 20260731T172934Z-47f809, pasted verbatim)
-
-No operator-named real collection existed when this session started, so per
-kickoff the demo ran on the planted corpus + a real Windows-TTS speech video
-(`_testdata\demo-s0`, 11 files, 7 modalities), through `scriptorium.cmd`, with
-the REAL sidecars: llama-server+Qwen3.5-9B OCR on :8091 (launched by the seam,
-18 s to healthy) and earshot/whisper.cpp ASR. $0 API, as required.
+**S0 at real scale — corpus #1 = C:\_DAD\projects-mirror (RATIFIED item 3),
+intake run 20260731T175629Z-48884d, verbatim:**
 
 ```
-== intake 20260731T172934Z-47f809 ==
-admitted 8 docs (8 text records) | skipped(done) 0 | dedup 1 | excluded 1 | quarantined 1 | near-dup flags 1 | 108.2s
-quarantined (typed, retried next run):
-  unsupported_modality   junk/blob.bin
-
-reconciliation: 11/11 classified = 100.0% complete (doc 8 / dedup 1 / excluded 1 / quarantined 1)
-  everything x-check [mixed]: index 11 vs walk 11 — agrees
-
-contact sheet (tokens x year x source x modality):
-  year  source        modality    files       chars    tokens
-  2019  mixed         text            1       3,675       844
-  2020  mixed         pdf             1          80        19
-  2020  mixed         text            1       2,539       572
-  2021  mixed         docx            1          99        21
-  2021  mixed         image           1          35         8
-  2021  mixed         pdf             1          46        12
-  2021  mixed         text            1       4,265       984
-  2026  mixed         av              1         110        24
-  *     *             *               8      10,849     2,484
-  census x-check vs estimate_tokens.py on 3 sample(s): mean ratio 1.0 (1.0 = perfect agreement)
+admitted 9743 docs (166742 text records) | skipped(done) 0 | dedup 4213 | excluded 0 | quarantined 2 | near-dup flags 7777 | 6004.3s
+reconciliation: 13958/13958 classified = 100.0% complete (doc 9743 / dedup 4213 / excluded 0 / quarantined 2)
+  everything x-check [claude-projects]: index 14026 vs walk 13958 — DIFFERS (index lag?)
+census: 9,743 files, 4,356,509,907 chars, 1,753,033,797 tokens (text 1.750B + pdf 2.6M)
+census x-check vs estimate_tokens.py on 10 samples: mean ratio 0.9999
+status --verify: tape OK: 188484 records, 65 segments, head fec1ef561b8ebdaa8606d537133c2d78
 ```
 
-`status --verify`: `tape OK: 33 records, 1 segments, head a546a4a8f431182f639950cdb4bbf4b4`.
-Sovereign-floor spot checks (from the tape, real model output):
+1.75B tokens — past the spec's "verbose lifetime" scale point. Quarantines: 2
+webfetch .bin files, typed. The everything x-check delta (+68) is informational
+(index-side extras); walk is ground truth. **Known census caveat:** the mirror
+copy reset all mtimes to 2026 -> the year axis is degenerate; stratification
+falls back to per-project (107 cells), which is the meaningful axis for this
+corpus. Content-time chronology is a P3-era concern (or re-intake from the
+original dirs someday — new docs, append-only, dedup folds the rest).
+
+## S1 — the Charter (green)
+
+Delivered: `ds.py` — the ONE provider seam, PS-1..PS-10 all implemented and
+stub-tested (retry ladder -> thinking rescue -> typed quarantine; AIMD gate
+halve/+64-per-min; hard usd_cap at start AND mid-flight; model-fp change halt;
+cache-aware meter; .env loader; **adaptive max_tokens escalation** when
+reasoning exhausts the output budget — found by live-run 1, see below) ·
+`discover.py` + `cards.py` + 5 frozen P1 prompts (hashes pinned in
+scriptorium.lock) · `freeze` gated on the S1 falsifier.
+
+**Live run 1 (p1-20260731T193852Z): failed honestly, $1.64.** 104/152
+induction batches returned empty content — thinking-high consumed the whole
+max_tokens=8000 as reasoning, and the same-call retry ladder repeated the
+doomed call. Fix: think-call headroom (24K-49K) + the adaptive ladder (empty
+content + completion_tokens ~ max_tokens -> triple the budget before retrying;
+tested). Merge/rubric quarantines now exit clean instead of tracebacking.
+
+**Live run 2 (p1-20260731T193852Z fix, run id in charter.yaml): GREEN,
+verbatim:**
 
 ```
-[ocr] 'SCANNED PAGE: words that exist only as pixels.'        conf 0.99, fp Qwen3.5-9B-Q5_K_M.gguf 7553c9770716
-[ocr] 'PNG NOTE: pixels-only caption text.'                   conf 0.99, fp Qwen3.5-9B-Q5_K_M.gguf 7553c9770716
-[transcript] 'Hello from the scriptorium demo. The tape keeps every word, and the fence will certify what the readers claim.'
+166742 text records, 1,753,033,797 tokens census
+sampled 1120 records, 6,351,194 tokens across 107 cells (budget 6,000,000)
+PS-8 gate: estimate $1.39 under cap $5.00 — proceeding
+induction: 152 batches, thinking effort=high ... 144/152 usable
+merged ontology: 45 projects, 22 themes, 14 genres
+goldens: 118 shards written, 12 defective; hit-rate 90%
+golden syntheses: 3/3 written
+scoring: run1 0.671  run2 0.681  bar 0.55 -> STABLE (falsifier passed)
+== P1 discover done in 1621s — $0.913 spent, hit-rate 91%
+charter FROZEN: 125 artifacts fingerprinted, root 209ed2439de94905ebe99f7da60b2ffd
 ```
 
-Both OCR transcriptions are verbatim-exact against the planted pixels; the
-transcript is word-perfect.
+The charter (C:\_DAD\projects-mirror-archive\charter\) is genuinely grounded:
+ontology names the operator, Access Intellect LLC, the organ family, the
+doctrine lines; the compression prior names whose voices count and lets tool
+chatter fall. Ratification = RATIFIED.md item 1 (operator delegation);
+**operator edits + re-freeze remain invited** — discover refuses to overwrite a
+frozen charter (version law), `--rescore-only` re-runs QC anytime.
 
-**NEEDS-OPERATOR: name a small real mixed folder for an S0 live run** (the
-demo above used the planted corpus per kickoff; point me at a real folder and
-`scriptorium.cmd intake <root>` is the whole ceremony — S1's `discover` also
-wants your archive as corpus #1).
+Session spend total: **$2.55** (run1 $1.64 + run2 $0.91 + smoke $0.0001)
+against the operator's "too cheap to meter" posture and a $5/pass cap.
 
-## Deviations from spec/kickoff (recorded, operator to bless or reverse)
+## Deviations (all blessed via RATIFIED.md item 2, or recorded here)
 
-- **docx via stdlib zip+xml**, not "through chunker's extractors": the chunker
-  has no clean full-text CLI mode — its chunk output carries section/recap
-  headers that would pollute canonical text. Same text-first philosophy, zero
-  new deps. (intake.py module docstring documents it too.)
-- **Discovery is walk-primary; `everything` is the cross-check** (kickoff
-  phrased it the other way around). Reason: Everything's index lags fresh
-  files ~1s, which would make discovery of just-written archives racy; the
-  walk is the ground truth of now, the index confirms it (it printed
-  "agrees" in the demo). Big-archive fast-path via everything is parked below.
-- **whisper hallucination on digital silence** ("You", exit 0) is taped
-  faithfully as the organ's output; the exit-4 no-speech path is covered by a
-  deterministic unit instead. Honesty note, not a bug.
+- docx via stdlib zip+xml (chunker has no clean full-text CLI mode).
+- Discovery walk-primary; `everything` as reconciliation cross-check.
+- whisper silence hallucination ("You") taped faithfully as organ output;
+  exit-4 no-speech covered by deterministic unit.
+- P1 sampling unit = tape text record (<=32k chars ~ chunk budget); the chunker
+  organ enters at P2/S2 as spec'd.
+- Model fingerprint from the API is the alias "deepseek-v4-flash" (not a dated
+  version string); PS-9 still functions as change detection.
 
 ## Parked (wishes, not blockers)
 
-- PyYAML (full YAML manifests) — subset parser refuses anchors/multiline with
-  clear errors; park until an operator manifest actually needs them.
-- Walk `on_error` journaling: unreadable *directories* are currently a silent
-  blind spot on both discovery and reconciliation sides (consistent, but
-  blind). Wants a typed `walk_error` journal record.
-- Aggregated exclusion journaling for huge exclude sets (per-file records
-  would bloat the tape at millions of files).
-- `everything` as discovery fast path for 2 TB archives (with walk verify).
-- OCR latency: ~97 s first call, ~45-50 s warm per image on this box —
-  llama-server tuning (batch, kv, mmproj offload) is S1+ work; contract and
-  provenance are correct today.
-- Near-dup flagging is O(n^2) over signatures (fine at S0 scale); LSH banding
-  when a real corpus makes it hurt.
-- Resumed (crash-interrupted) docs get no MinHash signature (prefix isn't
-  re-read); flagged in doc.notes as "resumed".
+- **Baidu Unlimited-OCR (hf.co/baidu/Unlimited-OCR) as the S2+ OCR engine
+  candidate** (operator surfaced 2026-07-31): DeepEncoder + 3B-MoE-A570M +
+  R-SWA, dedicated long-horizon document OCR; likely 10-50x our current
+  45-100s/image llama.cpp path. No llama.cpp support -> own venv + torch +
+  ~50-line OpenAI-compatible shim behind the existing local.py seam (it is
+  engine-agnostic by design; a swap = new extractor fingerprint = rescan the
+  negatives, spec section 5). Verify before adopting: license,
+  trust_remote_code surface, Windows-torch cleanliness, VRAM, output contract
+  (their fixed format -> our {text, regions, confidence_hint} envelope in the
+  shim). Adoption falsifier: both engines over the same golden scanned pages,
+  verbatim fidelity + wall-clock, winner takes the fingerprint.
+- Read-only Tape.open mode (no boot repair/lock write) so `status`/`discover`
+  can safely run DURING an intake; today: don't open a tape a writer holds.
+- Session-jsonl content extractor (messages' text out of the envelope) as a
+  future intake modality refinement — would shrink this corpus ~3-5x and clean
+  the register; a re-derive under version law, not a mid-corpus mutation.
+- Walk on_error journaling (unreadable dirs are a consistent blind spot);
+  aggregated exclusion journaling; LSH banding for near-dup at larger scale;
+  tape kind-index sidecar to avoid full scans in scan_tape/fetch_texts (two
+  ~4.3GB passes per discover today, ~2-4 min each); OCR latency tuning;
+  PyYAML full-syntax manifests.
+- 8/152 induction batches + 2/120 shards quarantined typed in live run 2 —
+  acceptable; worth a glance at ds_calls.jsonl before S2 to see if they share
+  a shape (they carry full reasoning_content in the run journal).
 
 ## BLOCKED
 
@@ -145,13 +127,18 @@ wants your archive as corpus #1).
 
 ## Next session's first move
 
-Read this file, then spec section 4 P1 + section 7 S1. Build `discover`:
-stratified sample over the Tape (the demo tape or the operator's corpus #1),
-Flash-thinking `high` through a new `ds.py` (laws PS-1..PS-10; meter + usd_cap
-BEFORE the first paid call, PS-8), emit charter/ontology.yaml + rubric_P2.md +
-compression prior + golden shards (>=10 planted defects) + 3 golden syntheses;
-`freeze` = operator ratifies -> fingerprints into scriptorium.lock. Falsifier:
-golden shards score below bar on re-run = the rubric isn't frozen-stable.
-DEEPSEEK_API_KEY goes in .env (never committed). The OCR sidecar may still be
-up on :8091 from this session (attach case will find it); a stray python from
-2026-07-27 (PID 104380) predates this project and was left alone.
+Read this file, RATIFIED.md, spec section 4 P2 + section 7 S2. Build `read`
+(P2 first reading): chunker-organ chunking at budget 8000 (breadcrumbs ->
+card context headers), the frozen charter as the byte-identical system prefix
+(PS-4; expect >=60% hit rate — run 2 measured 91% on the goldens fan-out),
+non-thinking t=0 JSON cards via ds.py, calibration shards interleaved every
+N=50 batches with halt-on-drift, resume via run journal, budget estimate from
+the census (1.75B tokens -> roughly $250-300 in at miss rates; the cache +
+the 4213-dedup fold and near-dup structure will pull it down; operator cap
+decision per pass), local embeddings via the :8092 sidecar (un-gate
+EmbedSidecar; qwen3-embedding-0.6b pinned in the lock), SQLite FTS5+vector
+index under catalog\. Falsifiers (spec S2): kill mid-pass -> resume zero
+dupes/gaps; hit-rate < 60% = prompt-shape bug; deliberately drill one
+calibration-drift halt. The OCR sidecar may still be running on :8091;
+harmless. DEEPSEEK_API_KEY is in .env; the scriptorium_cc key is repo-scoped
+and the operator deactivates it when the build-out ends.
