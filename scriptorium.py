@@ -134,11 +134,13 @@ def render_report(report) -> str:
             out.append(f"  everything x-check [{label}]: {x}")
 
     out.append("\ncontact sheet (tokens x year x source x modality):")
-    out.append(f"  {'year':<6}{'source':<14}{'modality':<10}{'files':>7}{'chars':>12}{'tokens':>10}")
+    w_src = max(14, max((len(r["source"]) for r in report.contact_rows), default=0) + 2)
+    out.append(f"  {'year':<6}{'source':<{w_src}}{'modality':<10}"
+               f"{'files':>8}{'chars':>18}{'tokens':>16}")
     for row in report.contact_rows:
         y = row["year"] if row["year"] is not None else "*"
-        out.append(f"  {y!s:<6}{row['source']:<14}{row['modality']:<10}"
-                   f"{row['files']:>7}{row['chars']:>12,}{row['tokens_est']:>10,}")
+        out.append(f"  {y!s:<6}{row['source']:<{w_src}}{row['modality']:<10}"
+                   f"{row['files']:>8}{row['chars']:>18,}{row['tokens_est']:>16,}")
     x = report.crosscheck
     if x.get("mean_ratio") is not None:
         out.append(f"  census x-check vs estimate_tokens.py on {len(x['samples'])} sample(s): "
