@@ -8,10 +8,12 @@
 > Certificate** — rebuildable forever from Tape + frozen charter + model
 > fingerprint.
 
-**Honest status (2026-07-31): rung S0 — the Tape.** `plan`, `intake`, `status`
-(and `resume`, the honest alias of `intake`) are real and falsifier-tested;
-every other subcommand prints its rung and refuses. No API key is needed or
-used at S0 — P0 is no-LLM by definition; OCR and ASR are local sidecars.
+**Honest status (2026-07-31): rung S0 green; rung S1 in flight.** `plan`,
+`intake`, `status`, `resume` (S0) and `discover`, `freeze` (S1) are real and
+tested; `read`/`map`/`reread`/`synthesize`/`certify`/`run`/`ask` print their
+rung and refuse. P0 uses no API; P1+ go through the one provider seam
+([ds.py](ds.py), laws PS-1..PS-10, DeepSeek V4 Flash) with a hard `usd_cap`
+per pass. `DEEPSEEK_API_KEY` lives in `.env` (gitignored).
 Spec: [`SCRIPTORIUM_ORGAN_SPEC_proposed_by_fable5_2026-07-31.md`](SCRIPTORIUM_ORGAN_SPEC_proposed_by_fable5_2026-07-31.md).
 Live build state: [`_run_state/STATE.md`](_run_state/STATE.md).
 
@@ -19,9 +21,11 @@ Live build state: [`_run_state/STATE.md`](_run_state/STATE.md).
 
 ```
 :: 1. write a manifest at your archive root (see below), then:
-scriptorium.cmd plan   D:\my-archive       :: preflight + census, writes nothing
-scriptorium.cmd intake D:\my-archive       :: builds/extends the Tape under that root
-scriptorium.cmd status D:\my-archive --verify
+scriptorium.cmd plan     D:\my-archive     :: preflight + census, writes nothing
+scriptorium.cmd intake   D:\my-archive     :: builds/extends the Tape under that root
+scriptorium.cmd status   D:\my-archive --verify
+scriptorium.cmd discover D:\my-archive     :: P1: propose charter + goldens (API, capped)
+scriptorium.cmd freeze   D:\my-archive     :: verify the S1 falsifier, fingerprint charter
 ```
 
 The archive root is the folder holding `manifest.yaml`. **The Tape lives with
@@ -84,10 +88,14 @@ character offsets into the NFC canonical `text` records.
 
 ## The ladder (spec section 7; one rung per session, falsifier-gated)
 
-- **S0 · Tape** — *this build.* Falsifiers green: planted corpus with zero
-  silent drops · one-byte corruption caught · kill-resume with zero dupes/gaps ·
-  import-graph closed · CANON-JSON known-answer vectors.
-- **S1 · Charter** — `discover` + operator-ratified `freeze`.
+- **S0 · Tape** — green. Falsifiers: planted corpus with zero silent drops ·
+  one-byte corruption caught · kill-resume with zero dupes/gaps · import-graph
+  closed · CANON-JSON known-answer vectors.
+- **S1 · Charter** — `discover` (stratified sample → ontology + rubric + prior
+  + golden shards with planted defects + 3 golden syntheses, double-scored for
+  stability) + `freeze` (refuses unless the falsifier passed; fingerprints
+  everything). Ratification currently by operator delegation
+  (_run_state/RATIFIED.md).
 - **S2 · First reading** — `read` (cards, calibration, budget meter, cache law).
 - **S3 · The circle** — `map` ⇄ `reread` to convergence.
 - **S4 · Codex + certificate** — `synthesize` + `certify`; the certificate is
