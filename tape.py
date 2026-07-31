@@ -32,6 +32,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -277,7 +278,17 @@ class Tape:
             json.dump(data, f, ensure_ascii=False, indent=1)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, self.lock_path)
+        # Windows: replace is denied while a concurrent reader (e.g. `status`)
+        # holds the destination open without FILE_SHARE_DELETE. Transient — retry
+        # bounded, then let the real error through.
+        for attempt in range(40):
+            try:
+                os.replace(tmp, self.lock_path)
+                return
+            except PermissionError:
+                if attempt == 39:
+                    raise
+                time.sleep(0.05)
 
     def close(self) -> None:
         if self._fh:
