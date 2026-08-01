@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-Modality = Literal["text", "pdf", "docx", "image", "av"]
+Modality = Literal["text", "pdf", "docx", "image", "av", "session"]
 
 QUARANTINE_REASONS = (
     "read_error",            # unreadable bytes / permissions
@@ -102,6 +102,17 @@ class Manifest(BaseModel):
     sovereignty: Sovereignty = Field(default_factory=Sovereignty)
     consent: str | None = None
     era_hints: list[Any] = Field(default_factory=list)
+    options: dict[str, Any] = Field(default_factory=dict)
+    # known option: sessions: raw|extract (default raw). "extract" routes
+    # Claude-session-shaped .jsonl through the session extractor — a tape
+    # GENERATION choice, made per archive root (spec section 5 version law).
+
+    @field_validator("options")
+    @classmethod
+    def _known_options(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if v.get("sessions") not in (None, "raw", "extract"):
+            raise ValueError("options.sessions must be 'raw' or 'extract'")
+        return v
 
     @field_validator("roots")
     @classmethod

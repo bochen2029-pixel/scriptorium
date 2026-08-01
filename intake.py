@@ -167,10 +167,109 @@ def is_archive_internal(entry: FileEntry, archive_root: Path) -> bool:
     return bool(rel.parts) and rel.parts[0].lower() in ARCHIVE_INTERNAL
 
 
+# -- session-jsonl extraction (tape generation v2; manifest opt-in) --------
+# A Claude Code session .jsonl is an envelope: user/assistant turns, thinking,
+# tool_use inputs, tool_result dumps. The extractor keeps the VOICES (user +
+# assistant text, summaries) and lets the envelope fall — mirroring the
+# charter prior's own editorial line. Thinking and tool traffic are working
+# paper, never canonical text. Timestamps give true content years, repairing
+# the mtime-degenerate census. Deterministic; bad lines are skipped + counted.
+
+_SESSION_TYPES = {"user", "assistant", "summary", "system"}
+
+
+def sniff_session_jsonl(head: bytes) -> bool:
+    for raw in head.split(b"\n")[:8]:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            continue
+        if (isinstance(obj, dict) and obj.get("type") in ("user", "assistant")
+                and isinstance(obj.get("message"), dict)):
+            return True
+    return False
+
+
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    if isinstance(content, list):
+        for c in content:
+            if isinstance(c, dict) and c.get("type") == "text" and c.get("text"):
+                parts.append(c["text"])
+    return "\n".join(parts)
+
+
+def extract_session_text(data: bytes) -> tuple[str, int | None, int]:
+    """-> (speaker-tagged transcript, min content year, bad-line count)."""
+    turns: list[str] = []
+    year: int | None = None
+    bad = 0
+    for raw in data.decode("utf-8", errors="replace").splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            bad += 1
+            continue
+        if not isinstance(obj, dict):
+            continue
+        t = obj.get("type")
+        if t == "summary" and obj.get("summary"):
+            turns.append(f"SUMMARY: {obj['summary']}")
+            continue
+        if t not in ("user", "assistant"):
+            continue
+        msg = obj.get("message")
+        if not isinstance(msg, dict):
+            continue
+        text = _content_text(msg.get("content")).strip()
+        if text:
+            turns.append(("USER: " if t == "user" else "ASSISTANT: ") + text)
+        ts = obj.get("timestamp")
+        if isinstance(ts, str) and len(ts) >= 4 and ts[:4].isdigit():
+            y = int(ts[:4])
+            if 1990 <= y <= 2100:
+                year = y if year is None else min(year, y)
+    return "\n\n".join(turns), year, bad
+
+
+def extract_session_file(path: Path, start_unit: int
+                         ) -> tuple[list[Block], dict[str, Any]]:
+    try:
+        data = path.read_bytes()
+    except OSError as e:
+        raise QuarantineError("read_error", str(e)) from e
+    text, year, bad = extract_session_text(data)
+    blocks = textnorm.split_blocks(textnorm.canonical(text))
+    fp: dict[str, Any] = {"kind": "session", "extractor": "session-jsonl-v1"}
+    if year is not None:
+        fp["content_year"] = year
+    if bad:
+        fp["bad_lines"] = bad
+    return ([(u, b, {"unit": u, "source": "session"})
+             for u, b in enumerate(blocks) if u >= start_unit and b], fp)
+
+
 # -- modality routing ------------------------------------------------------
 
-def route(entry: FileEntry) -> str:
+def route(entry: FileEntry, sessions_extract: bool = False) -> str:
     ext = entry.abspath.suffix.lower()
+    if ext == ".jsonl" and sessions_extract:
+        try:
+            with entry.abspath.open("rb") as f:
+                head = f.read(65536)
+        except OSError as e:
+            raise QuarantineError("read_error", str(e)) from e
+        if sniff_session_jsonl(head):
+            return "session"
+        return "text"
     if ext in TEXT_EXTS:
         return "text"
     if ext == ".pdf":
@@ -344,6 +443,8 @@ class Extractor:
                 ) -> tuple[list[Block], dict[str, Any]]:
         if modality == "text":
             return extract_text_file(path, start_unit)
+        if modality == "session":
+            return extract_session_file(path, start_unit)
         if modality == "docx":
             return extract_docx(path, start_unit)
         if modality == "pdf":
@@ -430,6 +531,7 @@ class IntakeRun:
         self.mf, self.archive_root = load_manifest(target)
         self.launch_ocr = launch_ocr
         self.quiet = quiet
+        self.sessions_extract = self.mf.options.get("sessions") == "extract"
         self.run_id = (time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
                        + "-" + secrets.token_hex(3))
         self.run_dir = self.archive_root / "runs" / self.run_id
@@ -566,7 +668,7 @@ class IntakeRun:
             return
 
         try:
-            modality = route(e)
+            modality = route(e, self.sessions_extract)
         except QuarantineError as q:
             self._quarantine(tape, e, q.reason, q.detail, content_b2)
             return
@@ -594,6 +696,9 @@ class IntakeRun:
         # a resumed (crash-interrupted) doc gets no signature: honest gap, noted on the doc
         sig = minhash.signature(full_text) if start_seq == 0 else None
         mtime_dt = datetime.fromtimestamp(e.mtime, UTC)
+        # session extraction recovers TRUE content years from timestamps —
+        # they beat the mirror-copy mtime for the census chronology
+        content_year = extractor_fp.pop("content_year", None)
 
         items: list[tuple[str, dict[str, Any]]] = []
         for k, (_unit, text, meta) in enumerate(blocks):
@@ -603,7 +708,8 @@ class IntakeRun:
         doc_body = DocBody(
             doc_id=doc_id, root=e.root, path=e.rel, source=e.label,
             content_b2=content_b2, size=e.size,
-            mtime=mtime_dt.isoformat(timespec="seconds"), year=mtime_dt.year,
+            mtime=mtime_dt.isoformat(timespec="seconds"),
+            year=content_year or mtime_dt.year,
             modality=modality, extractor=extractor_fp,
             n_texts=start_seq + len(blocks), chars=chars, tokens_est=tokens,
             notes=(["resumed"] if start_seq else [])
