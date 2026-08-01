@@ -8,6 +8,51 @@
 > Certificate** — rebuildable forever from Tape + frozen charter + model
 > fingerprint.
 
+## Why this exists, and why now
+
+A verbose lifetime is 10⁸–10⁹ tokens: years of session logs, letters, journals,
+transcripts, documents. At ~15k tokens/hour of human reading, one billion
+tokens is **~33 person-years to read once** — no notes, no index, no second
+pass. So nobody reads it. Archives rot as bytes that no one can ask anything.
+
+**DeepSeek V4 Flash (released 2026-07-31) changed the arithmetic.** An
+Artificial Analysis Intelligence Index score of ~50 — frontier-adjacent
+reading comprehension — priced at **$0.14 per million input tokens**
+($0.0028/M on cache hits, $0.28/M out), with a 1M context window and 2,500
+concurrent requests. At that price, *reading a billion tokens three times*
+(first reading, then re-reading twice with global context) is a
+few-hundred-dollar line item, and this repo's measured runs put a full first
+reading of an extracted archive at **roughly $100 per billion raw tokens** and
+a weekend of wall-clock. The scriptorium tradition — read, annotate, index,
+concord, cross-reference, peer-review — becomes an algorithm you can afford to
+run on your own life.
+
+What makes this more than "summarize my files":
+
+- **The Tape** — every source normalized to canonical text in an append-only,
+  blake2b-hash-chained store. The negatives are forever; catalogs are prints;
+  better models rescan.
+- **A bespoke ontology per corpus** — the schema is *induced from your archive*
+  and frozen under an explicit, operator-ratified editorial charter, not
+  imposed from a taxonomy.
+- **Stateless workers, measured consistency** — one frozen model + one frozen
+  rubric = a million identical librarians, calibrated against golden shards
+  with planted defects so the QC can actually fail.
+- **The fence** — every quote and claim is span-checked against the Tape by
+  deterministic code, never by a model. In this repo's first live run the
+  fence caught **28.5% of model "quotes" as paraphrase-as-quote** — measured,
+  quarantined, and structurally unable to ship as verbatim. That refusal *is*
+  the product working.
+- **Sovereignty split** — pixels and audio never leave the box (local
+  Qwen3.5-9B OCR, local whisper.cpp ASR, local embeddings); only canonical
+  *text* rents the reading.
+
+**Ideally used for:** personal lifetime archives (the operator's own corpus #1
+is 1.75B tokens of coding-session history), family papers and correspondence,
+research-group memory, small-org institutional knowledge — anything where the
+corpus outgrew every context window and every human reader, but still deserves
+a catalog with receipts.
+
 **Honest status (2026-07-31): rung S0 green; rung S1 in flight.** `plan`,
 `intake`, `status`, `resume` (S0) and `discover`, `freeze` (S1) are real and
 tested; `read`/`map`/`reread`/`synthesize`/`certify`/`run`/`ask` print their
@@ -113,3 +158,11 @@ uv run ruff check .
 Windows-native: Python ≥3.12 via uv, `.cmd` launcher, UTF-8 consoles, no WSL,
 no Docker, no symlinks. Provider seam (`ds.py`, DeepSeek V4 Flash, laws
 PS-1..PS-10) arrives at S1+ — S0 spends zero API dollars by construction.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The organ family this plugs into
+(`everything` / `everywhere` / `chunker` / `earshot` / `imguard`) are separate
+fixed-path tools on the author's machine; this repo is self-contained code +
+frozen prompts and degrades honestly (typed quarantines, never silent drops)
+when an organ is absent.
