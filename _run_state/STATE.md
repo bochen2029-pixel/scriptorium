@@ -61,20 +61,43 @@ or build bug" is measured as PREFIX-HIT EFFICIENCY (calls whose hits cover
 Both numbers are always reported. Operator may want to reconcile spec section
 1 PS-4's wording with section 6's "~30-40% hit share" economics note.
 
-**S2 gate remaining (spec: "cards + fence-checked spans on two real
-collections"):**
-1. Span fence-check utility over cards (quote offsets vs tape text) — the
-   P6-style verification the gate pulls forward. Not yet built.
-2. A second collection end-to-end (candidate: any small folder -> intake ->
-   discover -> freeze -> read; operator granted "anywhere on C:\" latitude).
-3. Full-corpus read of corpus #1: ~1.717B tokens remaining ~ $240-280 + a
-   long weekend of wall-clock at current pacing. **Blocked on operator:
-   DeepSeek balance is ~$8.1 after this session ($17.31 - $9.19 session
-   spend). Top up, then `scriptorium.cmd read C:\_DAD\projects-mirror-archive
-   --cap <N>` — resume picks up exactly where the slice stopped.**
+**Span fence-check (S2 gate item 1) — BUILT AND RUN LIVE (spancheck.py):**
+FERRYMAN's 2,683 cards, 12,167 quotes: verified 71.5% (substring 2,070 +
+no-offset-hit 6,577 + whitespace-normalized 54), **unlocated 28.5%** (3,466
+paraphrase-as-quote — fluent fiction MEASURED and caught), **exact-offset 0%**
+(model-emitted character offsets are 100% unusable; claim spans 15,201/21,234
+out of bounds). Constitutional consequences, recorded: (a) span coordinates
+must be DERIVED (locate quote in chunk deterministically), never trusted from
+the model — P6/S4 implements; the P5 two-register renderer only ever renders
+fence-LOCATED spans, so unlocated quotes cannot ship as verbatim (the design
+already contains the mitigation); (b) the next rubric version should harden
+the copy-exact demand on quotes.
 
-Session spend total: **$9.19** (S1 run1 $1.64 + S1 run2 $0.91 + P2 slice
-$6.63 + smokes <$0.01).
+**TAPE GENERATION v2 (RATIFIED item 6) — approved and IN FLIGHT:** session-
+jsonl extractor built + tested (voices kept: USER/ASSISTANT text + summaries;
+thinking/tool_use/tool_result dropped; true content years from timestamps fix
+the mtime-degenerate census; manifest opt-in `options.sessions: extract`;
+default raw = v1 behavior byte-identical). New archive root
+C:\_DAD\projects-mirror-archive-v2; v1 stays intact forever. Rationale: full
+read ~$70-110 instead of ~$315 (measured slice intensity $0.184/M x remaining
+1.717B raw = ~$316 — the earlier $240-280 estimate underweighted output and
+was corrected to the operator).
+
+**Remaining sequence (exact commands, resume-safe at every step):**
+1. v2 intake completing in background (log: scratchpad intake_v2.log).
+2. `scriptorium.cmd discover C:\_DAD\projects-mirror-archive-v2 --cap 5`
+   then `freeze` (v2 charter; the v1 charter stays bound to v1). ~$1.
+3. Optional validation slice within remaining balance:
+   `scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --projects
+   C--FERRYMAN --cap 5`.
+4. **Operator top-up**, then the full read:
+   `scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap <N>`
+   (estimate ~$70-110 on the compressed tape; PS-8 refuses/halts on cap;
+   kill-safe; consider the calibration-subset fix in Observations first).
+5. Second collection end-to-end (S2 gate item 2) — any small folder.
+
+Session spend so far: **$9.19** (S1 $1.64 + $0.91, P2 slice $6.63, smokes).
+DeepSeek balance ~ $8.1.
 
 ## Observations for the next session
 
