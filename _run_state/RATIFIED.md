@@ -38,3 +38,12 @@ usage panel $17.31 balance / $2.68 lifetime, pricing docs page):
    (negatives forever, spec section 5 version law). Purpose: full P2 read at
    ~$70-110 instead of ~$315, with cleaner cards. v2 gets its own charter
    (discover + freeze re-run); the v1 charter stays bound to the v1 tape.
+   RESULT (v2 intake done 2026-08-01): 1.753B -> 172.06M tokens = **10.2x
+   compression** (better than 3-5x projected); full-read projection now **~$32**
+   at the measured $0.184/M. Reconciliation 13958/13958 = 100.0%; 4 typed
+   quarantines (2 .bin + 2 ocr_failed PDFs, OCR non-determinism vs v1's 2).
+   Editorial consequence, ACCEPTED: extraction keeps the voice/decision layer
+   (Bo's instructions + assistant text) and drops thinking + tool_use +
+   tool_result, so this coding archive's actual code/command-outputs live only
+   in v1 (raw negatives). A future v3 could keep tool_use code blocks if the
+   work-product layer is ever wanted.
