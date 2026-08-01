@@ -18,7 +18,7 @@ FORBIDDEN = {
 ALLOWED_THIRD_PARTY = {"pydantic", "httpx", "fitz", "pymupdf", "tiktoken", "pytest"}
 OWN = {"canon", "tape", "models", "manifest", "organs", "local", "intake",
        "textnorm", "minhash", "scriptorium", "conftest", "ds", "discover",
-       "cards", "read"}
+       "cards", "read", "spancheck"}
 OWN |= {p.stem for p in (REPO / "tests").glob("test_*.py")}
 
 

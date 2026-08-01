@@ -29,3 +29,12 @@ usage panel $17.31 balance / $2.68 lifetime, pricing docs page):
    per Mtok; 1M ctx; 384K max out; 2500 concurrency). Note for later rungs:
    Responses API is Flash-only today, Pro support "early August 2026" — the
    OpenAI-format /chat/completions path stays primary per PS-1.
+6. **Tape generation v2 approved** (operator, 2026-07-31, "proceed according
+   to your recommendation plan"): session-jsonl content extraction (voices
+   kept: user/assistant text + summaries; envelope/thinking/tool traffic
+   dropped; true content years from timestamps) as manifest opt-in
+   `options.sessions: extract`. New archive root
+   C:\_DAD\projects-mirror-archive-v2; v1 stays intact and verifiable
+   (negatives forever, spec section 5 version law). Purpose: full P2 read at
+   ~$70-110 instead of ~$315, with cleaner cards. v2 gets its own charter
+   (discover + freeze re-run); the v1 charter stays bound to the v1 tape.
