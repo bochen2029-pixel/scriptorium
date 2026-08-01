@@ -1,9 +1,48 @@
 # scriptorium — run state
 
-**S0 GREEN · S1 GREEN · S2 code green + live slice green (gate partially met —
-see below). 2026-07-31, one session.** Trust this file + git over any memory;
-RATIFIED.md holds the operator's standing delegation. 80 pytest + ruff clean =
-green throughout; all numbers below are from real runs.
+**S0 GREEN · S1 GREEN · S2 code green + validated on TWO tapes. 2026-07-31→08-01.**
+Trust this file + git over any memory; RATIFIED.md holds the operator's standing
+delegation. 84 pytest + ruff clean; all numbers from real runs. Published public
+MIT at github.com/bochen2029-pixel/scriptorium.
+
+## TL;DR for the next session
+
+Corpus #1 exists as TWO tapes (spec section 5 version law — both valid, both
+verifiable, negatives forever):
+- **v1** `C:\_DAD\projects-mirror-archive` — raw envelopes, 1.753B tokens,
+  charter frozen (root 209ed243), FERRYMAN slice read (2,683 cards).
+- **v2** `C:\_DAD\projects-mirror-archive-v2` — session-extracted (voices only),
+  **172M tokens (10.2x smaller)**, charter frozen (root a7d94b8e, scored
+  0.710/0.718 — BETTER than v1), OUTREACH slice read (56 cards, fence 87.2%
+  verified vs v1's 71.5%). **v2 is the production tape.**
+
+**The one open action = operator top-up.** Full v2 read projects to ~$32 at
+$0.184/M; DeepSeek balance is ~$6.8. Then, one command:
+`scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 35`
+(resumable, calibration-gated, kill-safe). That produces the full Cards + index
+for corpus #1 and completes the S2 ship-gate's "two real collections" on the
+clean tape.
+
+## v2 pipeline results (2026-08-01) — the compression paid off twice
+
+| metric | v1 (raw) | v2 (extracted) |
+|---|---|---|
+| tokens | 1,753,033,797 | 172,063,716 (**10.2x**) |
+| reconciliation | 100.0% | 100.0% (13958/13958) |
+| charter scoring | 0.671/0.681 | **0.710/0.718** |
+| ontology | 45 proj/22 theme | 40 proj/14 theme (tighter; real PEOPLE surfaced) |
+| read fence-verified | 71.5% | **87.2%** |
+| fabrication (unlocated) | 28.5% | **12.8%** |
+| full-read cost | ~$315 | **~$32** |
+
+Extraction keeps Bo's instructions + assistant text; drops thinking/tool_use/
+tool_result (so v2 lacks the raw code/command-outputs — those live in v1 only;
+RATIFIED item 6). It didn't just cut cost — cleaner input measurably improved
+catalog fidelity (fence, scoring, ontology all better). v2 intake 4 quarantines
+(2 .bin + 2 ocr_failed PDFs), 3h13m (OCR slow lane on ~130 PDFs dominated).
+
+Session spend to date: ~$10.5 (S1 $1.64+$0.91, FERRYMAN $6.63, v2 discover
+$1.22, OUTREACH $0.09, smokes). Balance ~$6.8.
 
 ## Rung scoreboard
 
@@ -127,10 +166,19 @@ DeepSeek balance ~ $8.1.
 
 ## Next session's first move
 
-Read this file + RATIFIED.md. Then either (a) operator topped up -> launch the
-full read (background, capped, resumable; consider calibration-subset fix
-first), or (b) close the S2 gate cheaply: build the span fence-check utility
-(cards' quote offsets vs tape text — deterministic, no LLM) and run the second
-collection end-to-end on a small real folder. Then S3 (`map` + `reread`).
+Read this file + RATIFIED.md. If the operator topped up: launch the full v2
+read (command in TL;DR above; consider the calibration-subset fix first — 8
+rotating shards swing 0.57-0.72, want 16-24 or fixed). It's background,
+capped, resumable, kill-safe. When it finishes: run spancheck.py for the
+whole-catalog fence rate, then S3 (`map` + `reread` to convergence), then S4
+(`synthesize` + `certify` — the certificate is the product).
+
+Span fence-check (spancheck.py) is BUILT and is the S2 gate's fence item;
+whole-corpus rate prints after the full read. Exact-offset is 0% on both tapes
+(model char-offsets are useless) — S4's certify must DERIVE spans by locating
+quotes, never trust model offsets; the P5 renderer only ships fence-located
+spans, so the 12-28% unlocated can't surface as verbatim.
+
 DEEPSEEK_API_KEY in .env; scriptorium_cc key is repo-scoped; operator
-deactivates it when the build-out ends.
+deactivates it when the build-out ends. Keep the GitHub repo current
+(`git push`) at green milestones.
