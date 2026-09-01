@@ -143,6 +143,15 @@
       "ontology_v": "o1",
       "root_fingerprint": "a7d94b8ee9f6bb5ff97b401f3c3bbbf1",
       "frozen_at": "2026-08-01T05:27:18+00:00"
+    },
+    "scriptorium-repo-archive": {
+      "status": "frozen",
+      "archive": "C:\\_DAD\\scriptorium-repo-archive",
+      "model_fp": "deepseek-v4-flash",
+      "rubric_v": "r1",
+      "ontology_v": "o1",
+      "root_fingerprint": "cddeb55f09ab8380376e1e7bf1aeced5",
+      "frozen_at": "2026-09-01T10:27:10+00:00"
     }
   },
   "canon_vectors": {
