@@ -88,10 +88,9 @@ class IntercomBridge:
         self.me: str | None = None
         self.resource: str | None = None
 
-    @staticmethod
-    def _subprocess_runner(argv: list[str]) -> Any:
+    def _subprocess_runner(self, argv: list[str]) -> Any:
         try:
-            return subprocess.run([sys.executable, INTERCOM_PY, *argv],
+            return subprocess.run([sys.executable, self.cli, *argv],
                                   capture_output=True, text=True, timeout=120)
         except (OSError, subprocess.TimeoutExpired) as e:
             return SimpleNamespace(returncode=1, stdout="",

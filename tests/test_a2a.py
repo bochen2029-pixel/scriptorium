@@ -163,6 +163,23 @@ def test_join_carries_driver_identity(monkeypatch):
     assert argv[argv.index("--model") + 1] == "claude-fable-5"
 
 
+def test_runner_honors_cli_path(monkeypatch):
+    """The INTERCOM_PY override must reach the actual subprocess argv (it was
+    once validated in begin() but ignored by the transport)."""
+    import subprocess as sp
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["argv"] = argv
+        return CP(0, "ok", "")
+
+    monkeypatch.setattr(sp, "run", fake_run)
+    b = IntercomBridge(project="p", lane="l", cli="X:/custom/intercom.py")
+    b.me = "x"
+    b.say("hello")
+    assert seen["argv"][1] == "X:/custom/intercom.py"
+
+
 def test_pin_artifact_attestation():
     log: list[list[str]] = []
     b = fake_bridge([CP(0, "pinned", "")], log)
