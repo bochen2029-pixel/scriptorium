@@ -276,3 +276,17 @@ def test_backfill_vectors_reaches_chunks_a_rerun_cannot(stubs):
 
     again = backfill_vectors(arch)                   # idempotent
     assert again["missing"] == 0 and again["added"] == 0
+
+
+def test_dry_run_reports_a_cap_refusal_instead_of_performing_it(stubs):
+    """A preflight that refuses to preflight cannot size the run it exists
+    to size: over the cap it must REPORT would_refuse, spend nothing, and the
+    real read must still refuse at that cap."""
+    arch = frozen_mini(stubs)
+    rep = asyncio.run(run_read(arch, usd_cap=0.000001, base_url=stubs,
+                               batch_size=4, dry_run=True))
+    assert rep["dry_run"] and rep["would_refuse"] is True
+    assert rep["est_worst_case_usd"] > rep["usd_cap"]
+    assert read_cards(arch) == []
+    with pytest.raises(SystemExit, match="PS-8 halt"):
+        asyncio.run(run_read(arch, usd_cap=0.000001, base_url=stubs, batch_size=4))

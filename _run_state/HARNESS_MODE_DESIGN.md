@@ -319,7 +319,12 @@ lazy-imported only when a harness client is constructed).
   Worker provider/model default to the operator's session model
   (`SCRIPTORIUM_HARNESS_PROVIDER=modal`, `SCRIPTORIUM_HARNESS_MODEL=zai-org/GLM-5.3-Flash`);
   credentials come from the environment the operator already trusts for DSH (`MODAL_PROXY_TOKEN`,
-  `ZAI_API_KEY`) — scriptorium never stores harness credentials.
+  `ZAI_API_KEY`) — scriptorium never stores harness credentials. (Polish, 2026-09-01: round 4's workaround
+  that COPIED `~/.dsh/.credentials.yaml` into the worker home is gone — the store's `refs:`
+  block is read fresh per construction and injected into the worker's environment, never
+  written to disk, never logged; the process env wins where it already names a key. The
+  three copies under `_local/dsh-home*` were deleted. Proven live: the real-model smoke's
+  warmup authenticated on the first call.)
 - **HM-2 the contract rides in the task.** One stateless single-turn session per attempt; fresh
   `session_id` per attempt (`<pass>-<unit>-a<N>-<k>`). Task text = frozen system prefix, an explicit
   boundary marker ("the block above is the binding system contract"), output discipline (JSON-only

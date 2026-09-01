@@ -127,3 +127,36 @@ def test_segment_roll_preserves_order_and_chain(tmp_path):
     t2.append("journal", {"event": "again"})
     assert t2.verify().ok
     t2.close()
+
+
+def test_readonly_open_never_reconciles_or_writes(tmp_path):
+    """A reader's open (readonly=True) loads the checkpoint and nothing else:
+    it does not truncate a torn tail, does not roll the lock forward, cannot
+    append — so a `query` during a live intake can never damage the tape."""
+    make_tape(tmp_path / "a", n=5)
+    root = tmp_path / "a"
+    lock = root / "tape" / "tape.lock"
+    seg = root / "tape" / "segments" / "seg-000001.jsonl"
+    before_lock = lock.read_bytes()
+    with open(seg, "ab") as f:
+        f.write(b'{"i": 5, "kind": "journal", "torn')    # a writer mid-line
+    torn_size = seg.stat().st_size
+
+    t = Tape.open(root, readonly=True)
+    assert t.count == 5 and [r["i"] for r in t.iter_records()] == list(range(5))
+    with pytest.raises(Exception, match="readonly"):
+        t.append("journal", {"event": "no"})
+    t.close()
+    assert seg.stat().st_size == torn_size          # nothing truncated
+    assert lock.read_bytes() == before_lock         # nothing rewritten
+
+    # the WRITER's open still repairs, as it must
+    w = Tape.open(root)
+    assert w.repairs and seg.stat().st_size < torn_size
+    w.close()
+
+
+def test_readonly_open_on_a_missing_tape_is_an_empty_view(tmp_path):
+    t = Tape.open(tmp_path / "nothing-here", readonly=True)
+    assert t.count == 0 and list(t.iter_records()) == []
+    assert not (tmp_path / "nothing-here" / "tape").exists()   # no mkdir

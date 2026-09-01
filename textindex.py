@@ -53,7 +53,7 @@ class TextIndex:
     # -- build ---------------------------------------------------------------
     def ensure(self) -> dict[str, Any]:
         """Index whatever is not indexed yet. Returns {indexed, added, segments}."""
-        tape = Tape.open(self.root)
+        tape = Tape.open(self.root, readonly=True)   # a reader never reconciles
         added = 0
         try:
             for seg in tape.segments:

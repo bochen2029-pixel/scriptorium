@@ -6,7 +6,7 @@ the harness lane's worker model failed the bar honestly. S2 ship-gate item 2
 (a second real collection) DONE. 2026-07-31→09-01.** Trust this file + git
 over any memory; RATIFIED.md holds the operator's standing delegation (items
 7-9 added 2026-09-01; **item 9 changes an S1 falsifier and is flagged for
-your review**). 151 pytest + ruff clean; all numbers from real runs.
+your review**). 164 pytest + ruff clean; all numbers from real runs.
 Published public MIT at github.com/bochen2029-pixel/scriptorium.
 
 **The one thing between here and the product: ~$25 more of DeepSeek balance.**
@@ -212,8 +212,40 @@ Inspect it with: `scriptorium.cmd query C:\_DAD\scriptorium-repo-archive`
 
 ## Session log 2026-09-01 (Claude Code) — what changed, in one place
 
-Suite went 113 → **133 pytest + ruff clean**; every item below is committed and
+Suite went 113 → **164 pytest + ruff clean**; every item below is committed and
 pushed (survey docs stay local per RATIFIED 7).
+
+**Polish round (a deliberate quality pass over the day's own work, measured):**
+- **`Tape.open(readonly=True)`** — the default open truncates a torn tail and
+  rewrites `tape.lock` unconditionally; a `query` opened during a live intake
+  could have truncated the record being written. Readers (scan_tape,
+  fetch_texts, the text index, and through them query/fence) now load the
+  checkpoint and nothing else: O(1), never write, cannot append. The parked
+  "read-only Tape.open" item, done.
+- **`catalog.py`** — one tolerant `cards.jsonl` parser where six sites each
+  had their own (`iter_rows`), `CardStore` moved beside it and now heals a
+  torn tail before appending (a killed batch could glue the next batch's
+  first row onto it and lose a paid card), and an offset-indexed
+  `CardsReader` so a query seeks for its ten cards instead of parsing the
+  whole catalog. `query` now also reads chunk text through the tape offset
+  index. **Measured on the v1 catalog (2,683 cards, 4.3GB tape): search
+  11.14s → 0.047s** warm (22s once to build both indexes).
+- **FTS quirks handled** — `C--FERRYMAN` was a syntax error and `fence-check`
+  became "no such column: check"; malformed input now retries as ONE literal
+  phrase and the report says so (`matched_as: phrase`).
+- **Credentials never copied again** — round 4's workaround copied
+  `~/.dsh/.credentials.yaml` into the worker home (a second plaintext copy
+  inside the repo tree, and only made when MISSING, so a rotated token went
+  stale silently). Now the store's `refs:` block is read fresh per run and
+  injected into the worker's environment; the three existing copies were
+  deleted; proven live (real Modal smoke: warmup authenticated).
+- **`read --dry-run` reports a cap refusal instead of performing it** (a
+  preflight that refuses to preflight cannot size the run it exists to
+  size); per-chunk lease claims are bounded to 8 in flight (48 parallel
+  BEGIN IMMEDIATE writers starved each other past the bus's busy_timeout, and
+  every timeout degraded to "proceed uncoordinated" — the guard weakened
+  exactly when two drivers were present); `select_rows` no longer sorts the
+  caller's list in place.
 
 **Dual mode finished and then honestly qualified** (rounds 5-9, full evidence
 in HARNESS_MODE_DESIGN.md): all four designed A2A increments built (per-chunk

@@ -10,7 +10,9 @@ _run_state/HARNESS_MODE_DESIGN.md. Mirror of ds.py's PS-1..PS-10:
 
 - HM-1  one harness, explicit home (never ~/.dsh): dsh_home defaults to
         _local/dsh-home; worker provider/model default to the operator's
-        session model; credentials come from the parent environment only.
+        session model; credentials come from the parent environment, or are
+        injected into the worker's env from the operator's managed store —
+        read fresh per run, never copied to disk, never logged.
 - HM-2  the contract rides in the task: fresh single-turn session per attempt
         (GLOBALLY fresh — ids carry a per-client nonce because the session
         store persists across runs and re-running an on-disk id errors),
@@ -249,15 +251,50 @@ def _default_factory(spec: dict[str, Any]) -> Any:
     return deepseek_harness.DeepSeekHarness(**spec)
 
 
+CREDENTIALS_PATH = Path.home() / ".dsh" / ".credentials.yaml"
+
+
+def _credential_refs(path: Path = CREDENTIALS_PATH) -> dict[str, str]:
+    """The `refs:` block of the harness's managed credential store — the
+    named secrets its provider adapters resolve by environment name (e.g.
+    MODAL_PROXY_TOKEN, ZAI_API_KEY). Targeted and PyYAML-free: only that
+    block, only `KEY: value` lines, quotes stripped. Values exist to be
+    placed in a worker subprocess's environment; this module never logs,
+    prints, journals or writes them."""
+    if not path.exists():
+        return {}
+    out: dict[str, str] = {}
+    in_refs, base = False, 0
+    for raw in path.read_text("utf-8").splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if raw.strip() == "refs:":
+            in_refs, base = True, indent
+            continue
+        if not in_refs:
+            continue
+        if indent <= base:
+            break
+        key, _, val = raw.strip().partition(":")
+        key, val = key.strip(), val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        if key and val:
+            out[key] = val
+    return out
+
+
 def _ensure_worker_home(home: Path) -> str:
     """HM-1: the isolated worker home must carry the operator's provider
-    wiring AND managed credentials, or the runtime boots with no adapter and
-    init rejects the provider / the first call fails on auth. Precedence:
-    existing home files win; else explicitly inherit the operator's
-    ~/.dsh/settings.yaml (+ ~/.dsh/.credentials.yaml, the harness's managed
-    credential store that the sdk profile's credentials service reads — same
-    box, same user, same trust domain; logged — the SDK itself never reads
-    ~/.dsh); else a placeholder that fails honestly at init."""
+    WIRING (not secrets), or the runtime boots with no adapter and init
+    rejects the provider. Precedence: an existing home settings.yaml wins;
+    else explicitly inherit ~/.dsh/settings.yaml (same box, same user; the
+    SDK itself never reads ~/.dsh); else a placeholder that fails honestly.
+    Credentials are NOT copied here: they ride in the runtime's environment,
+    read fresh from the managed store per run (`_credential_refs`), so a
+    rotated token is picked up and no second plaintext copy sits inside the
+    repo tree. A copy left by an earlier build is removed."""
     notes = []
     s = home / "settings.yaml"
     inherited = Path.home() / ".dsh"
@@ -272,12 +309,11 @@ def _ensure_worker_home(home: Path) -> str:
                          "found — init will fail honestly until the operator "
                          "wires providers\n", "utf-8")
             notes.append("placeholder settings")
-    creds = home / ".credentials.yaml"
-    if not creds.exists():
-        src = inherited / ".credentials.yaml"
-        if src.exists():
-            creds.write_bytes(src.read_bytes())
-            notes.append("inherited managed credentials")
+    stale = home / ".credentials.yaml"
+    if stale.exists():
+        stale.unlink()
+        notes.append("removed stale credentials copy (secrets now ride in the "
+                     "runtime env, read fresh per run)")
     return "existing" if not notes else "; ".join(notes)
 
 
@@ -294,7 +330,8 @@ class HarnessClient:
                  runtime_factory: Callable[[dict[str, Any]], Any] | None = None,
                  chars_per_token: int = CHARS_PER_TOKEN,
                  system_persona: str | None = None,
-                 backoff: tuple[float, float] = (5.0, 15.0)):
+                 backoff: tuple[float, float] = (5.0, 15.0),
+                 inject_credentials: bool | None = None):
         prov = load_lock()["provider"]
         self.pass_name = pass_name
         self.usd_cap = usd_cap
@@ -349,6 +386,21 @@ class HarnessClient:
             self.system_persona = system_persona
             self.system_role = "patch"
             self._persona_chars = len(system_persona) + len(PERSONA_END)
+        # HM-1 credentials: the operator's managed secrets reach the worker
+        # runtime through its ENVIRONMENT — read from the managed store at
+        # every construction (a rotated token is picked up), never copied to
+        # disk, never logged; the process env wins where it already names one.
+        if inject_credentials is None:
+            inject_credentials = runtime_factory is None   # real runtimes only
+        self.credentials_note = "no managed credentials injected"
+        if inject_credentials:
+            inject = {k: v for k, v in _credential_refs().items()
+                      if not os.environ.get(k)}
+            if inject:
+                spec["env"] = inject
+                self.credentials_note = (
+                    f"{len(inject)} managed credential(s) injected into the "
+                    f"runtime env — never copied, never logged")
         self._spec = spec
         self.backoff = backoff
         self._factory = runtime_factory or _default_factory

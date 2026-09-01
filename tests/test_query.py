@@ -115,8 +115,11 @@ def test_refusals_are_typed():
     make_catalog(arch2, quotes=[])
     with pytest.raises(QueryError, match="empty query"):
         search(arch2, "   ")
-    with pytest.raises(QueryError, match="bad query"):
-        search(arch2, 'AND OR "')
+    # malformed FTS5 is no longer a refusal: it is matched as one literal
+    # phrase (and labelled so) — a typed refusal is reserved for input that
+    # cannot even be phrased
+    rep = search(arch2, 'AND OR "')
+    assert rep["matched_as"] == "phrase" and rep["n"] == 0
 
 
 def test_no_match_is_an_empty_report_not_an_error():
@@ -170,3 +173,19 @@ def test_summary_refuses_without_cards():
     (arch / "catalog" / "cards" / "cards.jsonl").unlink()
     with pytest.raises(QueryError, match="no cards"):
         summary(arch)
+
+
+def test_fts_syntax_in_plain_terms_falls_back_to_a_literal_phrase():
+    """FTS5 reads `a-b` as a column filter and `--` as NOT; an operator typing
+    a hyphenated name must get a match, and be told it was matched literally."""
+    arch = fresh_dir("query-phrase")
+    make_catalog(arch, quotes=[])
+    rep = search(arch, "fence-certifies")            # would be "no such column"
+    assert rep["n"] == 1 and rep["matched_as"] == "phrase"
+    assert "matched as ONE literal phrase" in render(rep)
+    ok = search(arch, "fence AND certifies")
+    assert ok["n"] == 1 and ok["matched_as"] == "expression"
+    # even a lone quote is phrase-able (measured): an empty phrase, zero hits,
+    # never a crash — the typed "bad query" refusal is defensive depth only
+    lone = search(arch, '"')
+    assert lone["matched_as"] == "phrase" and lone["n"] == 0

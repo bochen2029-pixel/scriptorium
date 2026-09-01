@@ -89,6 +89,7 @@ class Tape:
     segments: list[_Segment] = field(default_factory=list)
     segment_max_bytes: int = SEGMENT_MAX_BYTES_DEFAULT
     repairs: list[str] = field(default_factory=list)   # boot-repair notes, journaled by caller
+    readonly: bool = False          # a reader's open: never reconciles, never writes
     _fh: io.BufferedWriter | None = None
 
     # -- paths ------------------------------------------------------------
@@ -110,8 +111,22 @@ class Tape:
     # -- open / boot ------------------------------------------------------
     @classmethod
     def open(cls, archive_root: str | Path,
-             segment_max_bytes: int = SEGMENT_MAX_BYTES_DEFAULT) -> Tape:
-        t = cls(root=Path(archive_root), segment_max_bytes=segment_max_bytes)
+             segment_max_bytes: int = SEGMENT_MAX_BYTES_DEFAULT,
+             readonly: bool = False) -> Tape:
+        """readonly=True is a READER's open: load the acknowledged checkpoint
+        and nothing else. The default open reconciles the tail — rolls
+        forward, truncates a torn last line, rewrites tape.lock — which is
+        right for the one writer but wrong for a reader: a `query` opened
+        while an intake is mid-write could truncate the record being written
+        and clobber a newer checkpoint with a stale one. Readers see exactly
+        what the last checkpoint acknowledged (append_many checkpoints every
+        batch), pay O(1) instead of a last-segment scan, and cannot append."""
+        t = cls(root=Path(archive_root), segment_max_bytes=segment_max_bytes,
+                readonly=readonly)
+        if readonly:
+            if t.lock_path.exists():
+                t._load_lock()          # no tape yet = an empty view, not a write
+            return t
         t.seg_dir.mkdir(parents=True, exist_ok=True)
         t._load_lock()
         t._boot_reconcile()
@@ -218,6 +233,8 @@ class Tape:
 
     def append_many(self, items: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
         """Append records as one write + one fsync + one lock checkpoint."""
+        if self.readonly:
+            raise TapeError("tape opened readonly — appends refused")
         if not items:
             return []
         recs: list[dict[str, Any]] = []
@@ -270,6 +287,8 @@ class Tape:
         return self._fh
 
     def _write_lock(self) -> None:
+        if self.readonly:
+            raise TapeError("readonly tape never writes tape.lock")
         data = {"head": self.head, "count": self.count,
                 "segment_max_bytes": self.segment_max_bytes,
                 "segments": [s.to_json() for s in self.segments]}

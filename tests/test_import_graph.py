@@ -21,7 +21,8 @@ ALLOWED_THIRD_PARTY = {"pydantic", "httpx", "fitz", "pymupdf", "tiktoken",
                        "pytest", "deepseek_harness"}
 OWN = {"canon", "tape", "models", "manifest", "organs", "local", "intake",
        "textnorm", "minhash", "scriptorium", "conftest", "ds", "discover",
-       "cards", "read", "spancheck", "harness", "a2a", "query", "textindex"}
+       "cards", "read", "spancheck", "harness", "a2a", "query", "textindex",
+       "catalog"}
 OWN |= {p.stem for p in (REPO / "tests").glob("test_*.py")}
 
 

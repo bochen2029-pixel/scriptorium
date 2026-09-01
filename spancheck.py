@@ -27,7 +27,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from discover import fetch_texts
+from catalog import iter_rows
+from textindex import TextReader
 
 _WS = re.compile(r"\s+")
 
@@ -67,16 +68,11 @@ def fence_check(archive_root: str | Path, limit: int | None = None) -> dict[str,
     cards_path = root / "catalog" / "cards" / "cards.jsonl"
     if not cards_path.exists():
         raise SystemExit(f"no cards at {cards_path} — run `read` first")
-    rows: list[dict[str, Any]] = []
-    with open(cards_path, encoding="utf-8") as f:
-        for line in f:
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+    rows = list(iter_rows(cards_path))
     if limit:
         rows = rows[:limit]
-    texts = fetch_texts(root, {(r["doc_id"], r["seq"]) for r in rows})
+    with TextReader(root) as tr:           # seeks through the offset index
+        texts = tr.get_many({(r["doc_id"], r["seq"]) for r in rows})
 
     q = {"exact": 0, "substring": 0, "normalized": 0, "miss": 0,
          "no_offset_hit": 0, "no_offset_norm": 0, "no_offset_miss": 0}
@@ -153,14 +149,9 @@ def derive_spans(archive_root: str | Path,
     cards_path = root / "catalog" / "cards" / "cards.jsonl"
     if not cards_path.exists():
         raise SystemExit(f"no cards at {cards_path} — run `read` first")
-    rows = []
-    with open(cards_path, encoding="utf-8") as f:
-        for line in f:
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    texts = fetch_texts(root, {(r["doc_id"], r["seq"]) for r in rows})
+    rows = list(iter_rows(cards_path))
+    with TextReader(root) as tr:
+        texts = tr.get_many({(r["doc_id"], r["seq"]) for r in rows})
     out_path = cards_path.parent / out_name
     stats = {"quotes": 0, "located": 0, "find": 0, "whitespace": 0,
              "unlocated": 0, "cards_unfetchable": 0}

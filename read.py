@@ -45,6 +45,7 @@ from typing import Any
 import a2a
 from canon import blake2b128_hex
 from cards import CardV0
+from catalog import CardStore, iter_rows
 from discover import SCORING_BAR, RecRow, compare_cards, scan_tape
 from ds import CapExceeded, UnitQuarantined
 from harness import make_client
@@ -64,6 +65,12 @@ CALIB_SHARDS = 16         # rotating golden subset per calibration round; 8
                           # floor and halt-below-bar stays a hard law
 DRIFT_FLOOR = SCORING_BAR  # calibration mean below the charter bar = halt
 HARNESS_CONCURRENCY = 6   # HM-7: each slot is a full runtime subprocess
+CLAIM_CONCURRENCY = 8     # per-chunk lease claims in flight: each is a python
+                          # subprocess doing BEGIN IMMEDIATE on one SQLite
+                          # file; 48 at once starve each other past the bus's
+                          # 5s busy_timeout and every refusal degrades to
+                          # "proceed uncoordinated" — the guard weakens exactly
+                          # when two drivers are present
 OUT_TOKENS = 6000         # per-card output budget; dense chunks that exhaust
                           # it quarantine as json-hostile — --max-out-tokens
                           # raises it for a --retry-quarantined rerun
@@ -111,45 +118,7 @@ def verify_frozen_charter(charter: Path) -> dict[str, Any]:
     return lock
 
 
-# -- catalog stores --------------------------------------------------------
-
-class CardStore:
-    """Append-only cards + quarantine JSONL with fsync'd batch writes."""
-
-    def __init__(self, cards_dir: Path):
-        cards_dir.mkdir(parents=True, exist_ok=True)
-        self.cards_path = cards_dir / "cards.jsonl"
-        self.quar_path = cards_dir / "quarantine.jsonl"
-
-    def done_keys(self, *, include_quarantined: bool = True) -> set[tuple[str, int]]:
-        """Resume law: skip keys already present. include_quarantined=False is
-        the --retry-quarantined mode — quarantined keys become todo again; a
-        key later appearing in BOTH files means resolved-on-retry (cards.jsonl
-        wins; quarantine.jsonl is append-only history)."""
-        paths = ((self.cards_path, self.quar_path) if include_quarantined
-                 else (self.cards_path,))
-        done: set[tuple[str, int]] = set()
-        for p in paths:
-            if not p.exists():
-                continue
-            with open(p, encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        row = json.loads(line)
-                        done.add((row["doc_id"], row["seq"]))
-                    except (json.JSONDecodeError, KeyError):
-                        continue          # torn tail from a kill; overwritten next append
-        return done
-
-    def append_batch(self, path: Path, rows: list[dict[str, Any]]) -> None:
-        if not rows:
-            return
-        blob = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(blob)
-            f.flush()
-            os.fsync(f.fileno())
-
+# -- catalog stores (CardStore lives in catalog.py with the other readers) ---
 
 class CatalogIndex:
     """SQLite: chunks + FTS5 + float32 vectors (the resident-skeleton feedstock)."""
@@ -216,16 +185,11 @@ def backfill_vectors(target: str | Path, batch: int = 16) -> dict[str, Any]:
         raise SystemExit(f"no cards at {cards_path} — run `read` first")
     keys: list[tuple[str, int]] = []
     seen: set[tuple[str, int]] = set()
-    with open(cards_path, encoding="utf-8") as f:
-        for line in f:
-            try:
-                row = json.loads(line)
-                key = (row["doc_id"], row["seq"])
-            except (json.JSONDecodeError, KeyError):
-                continue
-            if key not in seen:
-                seen.add(key)
-                keys.append(key)
+    for row in iter_rows(cards_path):
+        key = (row["doc_id"], row["seq"])
+        if key not in seen:
+            seen.add(key)
+            keys.append(key)
 
     index = CatalogIndex(root / "catalog" / "index.sqlite")
     missing = [k for k in keys if not index.has_vector(k)]
@@ -275,7 +239,7 @@ def backfill_vectors(target: str | Path, batch: int = 16) -> dict[str, Any]:
 
 def select_rows(rows: list[RecRow], projects: list[str] | None,
                 max_tokens: int | None) -> list[RecRow]:
-    picked = rows
+    picked = list(rows)               # never sort the caller's list in place
     if projects:
         picked = [r for r in picked
                   if any(fnmatch.fnmatch(r.project.lower(), p.lower())
@@ -356,14 +320,28 @@ async def run_read(target: str | Path, *, usd_cap: float,
         # PS-8 gates on the WORST case (every input token billed as a cache
         # miss); the realistic line is printed beside it so a cap can be set
         # from evidence instead of from the worst case alone.
-        est = client.gate_estimate(est_in, est_out)
         prices = client.meter.prices
         hit = est_in * EST_CACHE_HIT_RATE
         realistic = ((est_in - hit) * prices["input_cache_miss"]
                      + hit * prices["input_cache_hit"]
                      + est_out * prices["output"]) / 1e6
-        say(f"  PS-8 gate: worst case ${est:.2f} (no cache credit) under cap "
-            f"${usd_cap:.2f} — proceeding")
+        would_refuse = False
+        try:
+            est = client.gate_estimate(est_in, est_out)
+        except CapExceeded:
+            if not dry_run:
+                raise
+            # a preflight REPORTS the refusal instead of performing it —
+            # otherwise it cannot preflight the very run it exists to size
+            est = (est_in * prices["input_cache_miss"]
+                   + est_out * prices["output"]) / 1e6
+            would_refuse = True
+        if would_refuse:
+            say(f"  PS-8 gate WOULD REFUSE: worst case ${est:.2f} exceeds cap "
+                f"${usd_cap:.2f} — raise --cap for the real run")
+        else:
+            say(f"  PS-8 gate: worst case ${est:.2f} (no cache credit) under "
+                f"cap ${usd_cap:.2f} — proceeding")
         say(f"    realistic ~${realistic:.2f} at the measured "
             f"{EST_CACHE_HIT_RATE:.0%} prefix-cache rate "
             f"({len(todo)} chunks, prefix ~{prefix_tokens} tok/call, "
@@ -396,7 +374,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
                 "batches": (len(todo) + batch_size - 1) // batch_size,
                 "est_worst_case_usd": round(est, 2),
                 "est_realistic_usd": round(realistic, 2),
-                "usd_cap": usd_cap,
+                "usd_cap": usd_cap, "would_refuse": would_refuse,
                 "charter_root": charter_lock.get("root_fingerprint"),
                 "text_index": reader.stats,
                 "sampled_chunks_readable": f"{len(served)}/{len(sample)}",
@@ -469,6 +447,14 @@ async def run_read(target: str | Path, *, usd_cap: float,
             scores = await asyncio.gather(*(one(s) for s in subset))
             return sum(scores) / len(scores) if scores else 0.0
 
+        claim_sem = asyncio.Semaphore(CLAIM_CONCURRENCY)
+
+        async def _claim(r: RecRow) -> bool:
+            async with claim_sem:
+                return await asyncio.to_thread(
+                    a2a.try_claim, bridge,
+                    f"scriptorium:{root.name}:p2:{r.doc_id}:{r.seq}")
+
         batches = [todo[i:i + batch_size] for i in range(0, len(todo), batch_size)]
         for bi, batch in enumerate(batches):
             a2a.heartbeat(bridge)      # a multi-hour read must keep its lease
@@ -499,11 +485,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
             # catalog; the resume law keeps every key single-writer forever).
             work = batch
             if bridge is not None:
-                wins = await asyncio.gather(*(
-                    asyncio.to_thread(
-                        a2a.try_claim, bridge,
-                        f"scriptorium:{root.name}:p2:{r.doc_id}:{r.seq}")
-                    for r in batch))
+                wins = await asyncio.gather(*(_claim(r) for r in batch))
                 work = [r for r, w in zip(batch, wins, strict=True) if w]
                 if len(work) < len(batch):
                     skipped = len(batch) - len(work)

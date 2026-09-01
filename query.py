@@ -22,14 +22,14 @@ and named as unlocated, so the window can never launder a fabrication.
 
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-from discover import fetch_texts
+from catalog import CardsReader, iter_rows
 from spancheck import locate
+from textindex import TextReader
 
 # archives carry terminal captures: ANSI colour and control bytes are part of
 # the Tape's honest bytes, but they must never reach a console verbatim (they
@@ -45,21 +45,6 @@ class QueryError(Exception):
     pass
 
 
-def _cards_by_key(root: Path) -> dict[tuple[str, int], dict[str, Any]]:
-    p = root / "catalog" / "cards" / "cards.jsonl"
-    out: dict[tuple[str, int], dict[str, Any]] = {}
-    if not p.exists():
-        return out
-    with open(p, encoding="utf-8") as f:
-        for line in f:
-            try:
-                row = json.loads(line)
-                out[(row["doc_id"], row["seq"])] = row      # last write wins
-            except (json.JSONDecodeError, KeyError):
-                continue
-    return out
-
-
 def search(archive_root: str | Path, terms: str, limit: int = 5,
            snippet_chars: int = 240) -> dict[str, Any]:
     """FTS5 over the indexed chunks -> the cards read from them, with
@@ -70,17 +55,25 @@ def search(archive_root: str | Path, terms: str, limit: int = 5,
         raise QueryError(f"no catalog index at {db_path} — run `read` first")
     if not terms.strip():
         raise QueryError("empty query")
+    sql = ("SELECT m.doc_id, m.seq, bm25(chunks_fts) AS rank,"
+           "       snippet(chunks_fts, 0, '[', ']', ' ... ', 12) AS snip "
+           "FROM chunks_fts f JOIN fts_map m ON m.fts_rowid = f.rowid "
+           "WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?")
+    matched_as = "expression"
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         try:
-            rows = db.execute(
-                "SELECT m.doc_id, m.seq, bm25(chunks_fts) AS rank,"
-                "       snippet(chunks_fts, 0, '[', ']', ' ... ', 12) AS snip "
-                "FROM chunks_fts f JOIN fts_map m ON m.fts_rowid = f.rowid "
-                "WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
-                (terms, limit)).fetchall()
-        except sqlite3.OperationalError as e:      # malformed FTS expression
-            raise QueryError(f"bad query {terms!r}: {e}") from e
+            rows = db.execute(sql, (terms, limit)).fetchall()
+        except sqlite3.OperationalError as first:
+            # FTS5 reads a hyphen as NOT and `a-b` as a column filter, so an
+            # ordinary term like C--FERRYMAN or fence-check "fails". Retry the
+            # whole input as ONE literal phrase and say so in the report.
+            phrase = '"' + terms.replace('"', '""') + '"'
+            try:
+                rows = db.execute(sql, (phrase, limit)).fetchall()
+                matched_as = "phrase"
+            except sqlite3.OperationalError:
+                raise QueryError(f"bad query {terms!r}: {first}") from first
         meta = {}
         for doc_id, seq, _r, _s in rows:
             got = db.execute("SELECT project, year, path FROM chunks "
@@ -89,9 +82,11 @@ def search(archive_root: str | Path, terms: str, limit: int = 5,
     finally:
         db.close()
 
-    cards = _cards_by_key(root)
     keys = [(d, s) for d, s, _r, _sn in rows]
-    texts = fetch_texts(root, set(keys)) if keys else {}
+    with CardsReader(root) as cr:          # seeks, not a whole-catalog parse
+        cards = cr.get_many(keys)
+    with TextReader(root) as tr:           # seeks, not a tape pass
+        texts = tr.get_many(keys) if keys else {}
 
     hits = []
     for (doc_id, seq), (_d, _s, rank, snip) in zip(keys, rows, strict=True):
@@ -127,7 +122,7 @@ def search(archive_root: str | Path, terms: str, limit: int = 5,
                            for c in card.get("claims", [])],
             } if row is not None else None,
         })
-    return {"terms": terms, "hits": hits, "n": len(hits)}
+    return {"terms": terms, "matched_as": matched_as, "hits": hits, "n": len(hits)}
 
 
 def summary(archive_root: str | Path, top: int = 12) -> dict[str, Any]:
@@ -151,44 +146,34 @@ def summary(archive_root: str | Path, top: int = 12) -> dict[str, Any]:
     charter_roots: Counter[str] = Counter()
     n_cards = n_quotes = n_claims = 0
     keys: set[tuple[str, int]] = set()
-    with open(cards_path, encoding="utf-8") as f:
-        for line in f:
-            try:
-                row = json.loads(line)
-                card = row["card"]
-            except (json.JSONDecodeError, KeyError):
-                continue
-            key = (row.get("doc_id"), row.get("seq"))
-            if key in keys:
-                continue                      # resume/rerun overlap: count once
-            keys.add(key)
-            n_cards += 1
-            n_quotes += len(card.get("quotes", []))
-            n_claims += len(card.get("claims", []))
-            for t in card.get("topics", []):
-                topics[_display(t)] += 1
-            for e in card.get("entities", []):
-                if e.get("name"):
-                    entities[_display(e["name"])] += 1
-                    kinds[e.get("kind") or "other"] += 1
-            fp = row.get("fp") or {}
-            if fp.get("model"):
-                models[fp["model"]] += 1
-            if fp.get("charter_root"):
-                charter_roots[fp["charter_root"]] += 1
+    for row in iter_rows(cards_path):
+        card = row.get("card")
+        if not isinstance(card, dict):
+            continue
+        key = (row["doc_id"], row["seq"])
+        if key in keys:
+            continue                          # resume/rerun overlap: count once
+        keys.add(key)
+        n_cards += 1
+        n_quotes += len(card.get("quotes", []))
+        n_claims += len(card.get("claims", []))
+        for t in card.get("topics", []):
+            topics[_display(t)] += 1
+        for e in card.get("entities", []):
+            if e.get("name"):
+                entities[_display(e["name"])] += 1
+                kinds[e.get("kind") or "other"] += 1
+        fp = row.get("fp") or {}
+        if fp.get("model"):
+            models[fp["model"]] += 1
+        if fp.get("charter_root"):
+            charter_roots[fp["charter_root"]] += 1
 
     quar: Counter[str] = Counter()
     n_quar = 0
-    quar_path = cards_dir / "quarantine.jsonl"
-    if quar_path.exists():
-        with open(quar_path, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    reason = json.loads(line).get("reason", "?")
-                except json.JSONDecodeError:
-                    continue
-                n_quar += 1
-                quar[str(reason).split(":")[0][:60]] += 1
+    for row in iter_rows(cards_dir / "quarantine.jsonl"):
+        n_quar += 1
+        quar[str(row.get("reason", "?")).split(":")[0][:60]] += 1
 
     index: dict[str, int | None] = {}
     db_path = root / "catalog" / "index.sqlite"
@@ -270,6 +255,9 @@ def render(report: dict[str, Any]) -> str:
     """Plain-text, two registers kept visibly apart."""
     out = [f'query: {report["terms"]}  ({report["n"]} hit'
            f'{"" if report["n"] == 1 else "s"})']
+    if report.get("matched_as") == "phrase":
+        out.append('  (matched as ONE literal phrase — the input had FTS5 '
+                   'syntax; use AND / OR / NOT or "quotes" for expressions)')
     if not report["hits"]:
         out.append("  (no chunk in this catalog matches)")
     for h in report["hits"]:

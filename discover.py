@@ -68,7 +68,7 @@ class RecRow:
 def scan_tape(root: Path) -> tuple[list[RecRow], int, dict[str, dict[str, Any]]]:
     """One streaming pass: text-record rows joined with their doc's metadata.
     Rows belonging to docs that never completed are dropped (partial docs)."""
-    tape = Tape.open(root)
+    tape = Tape.open(root, readonly=True)
     rows: dict[str, list[RecRow]] = {}
     kept: list[RecRow] = []
     doc_meta: dict[str, dict[str, Any]] = {}
@@ -94,7 +94,7 @@ def scan_tape(root: Path) -> tuple[list[RecRow], int, dict[str, dict[str, Any]]]
 
 
 def fetch_texts(root: Path, wanted: set[tuple[str, int]]) -> dict[tuple[str, int], str]:
-    tape = Tape.open(root)
+    tape = Tape.open(root, readonly=True)
     out: dict[tuple[str, int], str] = {}
     try:
         for rec in tape.iter_records(kinds=("text",)):

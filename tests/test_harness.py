@@ -534,20 +534,78 @@ def test_ensure_worker_home_precedence(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home",
                         lambda: tmp_path / "fakehome")
     home = tmp_path / "home"
-    # no source anywhere -> honest placeholder (credentials source absent too)
+    # no source anywhere -> honest placeholder
     assert harness._ensure_worker_home(home) == "placeholder settings"
     # an existing home settings file always wins
     (home / "settings.yaml").write_text("a: 1", encoding="utf-8")
     assert harness._ensure_worker_home(home) == "existing"
-    # otherwise the operator's ~/.dsh settings + managed credentials are
-    # inherited explicitly (same box, same user, same trust domain)
+    # otherwise the operator's ~/.dsh settings (wiring, not secrets) are
+    # inherited explicitly; the managed credential store is NEVER copied
     home2 = tmp_path / "home2"
     src = tmp_path / "fakehome" / ".dsh"
     src.mkdir(parents=True)
     (src / "settings.yaml").write_text("llm-pi-ai:\n  providers: {}\n",
                                        encoding="utf-8")
-    (src / ".credentials.yaml").write_text("version: 1\n", encoding="utf-8")
+    (src / ".credentials.yaml").write_text("refs:\n  K: v\n", encoding="utf-8")
     note = harness._ensure_worker_home(home2)
-    assert "inherited" in note and "credentials" in note
+    assert "inherited" in note and "credentials" not in note
     assert "llm-pi-ai" in (home2 / "settings.yaml").read_text("utf-8")
-    assert (home2 / ".credentials.yaml").exists()
+    assert not (home2 / ".credentials.yaml").exists()
+    # a copy left by an earlier build is removed, and said so
+    (home2 / ".credentials.yaml").write_text("refs:\n  K: v\n", encoding="utf-8")
+    assert "removed stale credentials copy" in harness._ensure_worker_home(home2)
+    assert not (home2 / ".credentials.yaml").exists()
+
+
+def test_credential_refs_targeted_parse(tmp_path):
+    """Only the refs: block, quotes stripped, records ignored, slash keys
+    (which the manifest yamlite rejects) never a problem; absent file = {}."""
+    p = tmp_path / ".credentials.yaml"
+    p.write_text(
+        "version: 1\n"
+        "records:\n"
+        "  client-connection/browser-session:\n"
+        "    kind: x\n"
+        "    payload:\n"
+        "      secret: NOT-A-REF\n"
+        "refs:\n"
+        "  # comment inside\n"
+        "  ZAI_API_KEY: \"quoted-value\"\n"
+        "  MODAL_PROXY_TOKEN: bare-value\n"
+        "  EMPTY:\n"
+        "tail: ignored\n", encoding="utf-8")
+    refs = harness._credential_refs(p)
+    assert refs == {"ZAI_API_KEY": "quoted-value", "MODAL_PROXY_TOKEN": "bare-value"}
+    assert harness._credential_refs(tmp_path / "missing.yaml") == {}
+
+
+def test_credentials_ride_in_the_runtime_env_never_on_disk(tmp_path, monkeypatch):
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".dsh").mkdir(parents=True)
+    (fake_home / ".dsh" / ".credentials.yaml").write_text(
+        "refs:\n  MODAL_PROXY_TOKEN: from-store\n  ZAI_API_KEY: also-store\n",
+        encoding="utf-8")
+    monkeypatch.setattr(harness, "CREDENTIALS_PATH",
+                        fake_home / ".dsh" / ".credentials.yaml")
+    monkeypatch.setattr(harness._credential_refs, "__defaults__",
+                        (fake_home / ".dsh" / ".credentials.yaml",))
+    monkeypatch.setenv("ZAI_API_KEY", "from-process-env")   # env wins
+    monkeypatch.delenv("MODAL_PROXY_TOKEN", raising=False)
+
+    calls, rts = [], []
+    c = client(make_factory([{"content": '{"answer": "ok"}'}], calls, rts),
+               inject_credentials=True, harness_home=tmp_path / "wh")
+
+    async def go():
+        await c.chat(system="S", user="U", mode="extract", unit_id="u1",
+                     out_model=TinyOut)
+        await c.close()
+
+    run(go())
+    env = rts[0].spec["env"]
+    assert env == {"MODAL_PROXY_TOKEN": "from-store"}      # ZAI left to the env
+    assert "injected" in c.credentials_note
+    assert not (tmp_path / "wh" / ".credentials.yaml").exists()
+    # the default for a fake factory is NO injection (tests never read ~/.dsh)
+    c2 = client(make_factory([], [], []))
+    assert "env" not in c2._spec and "no managed" in c2.credentials_note
