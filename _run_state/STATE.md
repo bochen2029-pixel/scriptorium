@@ -445,7 +445,13 @@ evidence is in HARNESS_MODE_DESIGN.md). Then:
 1. ~~Collection #2~~ DONE (section above; numbers recorded).
 2. **If the balance is topped up, launch the full v2 api read** — it is
    background, capped, resumable, kill-safe, memory-bounded, and its lease
-   now renews:
+   now renews. Preflight it first (spends nothing, ~1 min):
+   ```
+   scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 55 --dry-run
+   ```
+   which on 2026-09-01 reported: **27,392 chunks over 571 batches, worst case
+   $50.60 / realistic $36.78 under the $55 cap, charter a7d94b8e verified,
+   200/200 sampled chunks readable, embed sidecar up.** Then:
    ```
    scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 55
    ```
