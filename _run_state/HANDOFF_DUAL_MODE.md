@@ -1,5 +1,15 @@
 # HANDOFF — scriptorium dual mode (drive it through Intercom/harness, not just the API)
 
+> **STATUS: CARRIED OUT (2026-09-01, Claude Code session). This file is now
+> HISTORY — read `STATE.md` for current truth, not this.** Every numbered item
+> was done: the A2A increments (per-chunk leases, batch findings, attestation
+> — card-grain evaluated and rejected in favour of an artifact pin, persona
+> patch), the live slice, the fence, and the trail. The one answer this
+> document could not contain: the harness lane works, but GLM-5.3-Flash as
+> the worker model does NOT meet the charter's bar (evidence:
+> HARNESS_MODE_DESIGN.md "Round-9 VERDICT"), so the api lane remains the
+> production reader. Do not re-litigate the plan below; it is finished.
+
 *Authored 2026-09-01 by the previous DSH session ("get bearings on this repo"), verbatim on the
 operator's behalf, for the next session taking this over. Trust the repo's own state files over
 any narration — including this one. Everything below is self-contained.*

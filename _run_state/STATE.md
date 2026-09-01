@@ -1,11 +1,30 @@
 # scriptorium — run state
 
-**S0 GREEN · S1 GREEN · S2 code green + validated on TWO tapes · DUAL MODE
-(api + harness) BUILT, HARDENED, live-blocked only on the Modal window.
-2026-07-31→09-01.** Trust this file + git over any memory; RATIFIED.md holds
-the operator's standing delegation (items 7+8 added 2026-09-01). 125 pytest +
-ruff clean; all numbers from real runs. Published public MIT at
-github.com/bochen2029-pixel/scriptorium.
+**S0 GREEN · S1 GREEN · S2 code green, live on THREE catalogs · DUAL MODE
+(api + harness) BUILT and QUALIFIED — the api lane is the production reader;
+the harness lane's worker model failed the bar honestly. S2 ship-gate item 2
+(a second real collection) DONE. 2026-07-31→09-01.** Trust this file + git
+over any memory; RATIFIED.md holds the operator's standing delegation (items
+7-9 added 2026-09-01; **item 9 changes an S1 falsifier and is flagged for
+your review**). 151 pytest + ruff clean; all numbers from real runs.
+Published public MIT at github.com/bochen2029-pixel/scriptorium.
+
+**The one thing between here and the product: ~$25 more of DeepSeek balance.**
+Everything else is built, tested, measured, and pushed. See BLOCKED.
+
+## BLOCKED
+
+- **Full-corpus P2 (api lane): operator top-up of about $25.** Realistic cost
+  ~$37 (~$39 with retries), worst case $51 — measured, not guessed (the old
+  ~$32 came from a 3x-low output estimate). Balance measured $15.15 on
+  2026-09-01, so ~40% of the corpus is readable today if the operator
+  prefers partial-now (the read is resumable, so a partial run is not
+  wasted). This is the ONLY path to the full catalog
+  now: the harness lane's worker model failed qualification (round-9 verdict
+  — 0.26-0.37 vs the charter, 0.497 self-agreement, bar 0.55; zero cards
+  shipped, $0 spent). The Modal 429 window from earlier resolved on its own
+  and is NOT the blocker; the model's reproducibility is.
+- Nothing else. Every other thread this session reached a recorded end.
 
 ## TL;DR for the next session
 
@@ -48,7 +67,7 @@ verifiable, negatives forever):
 | ontology | 45 proj/22 theme | 40 proj/14 theme (tighter; real PEOPLE surfaced) |
 | read fence-verified | 71.5% | **87.2%** |
 | fabrication (unlocated) | 28.5% | **12.8%** |
-| full-read cost | ~$315 | **~$32** |
+| full-read cost | ~$315 | **~$37 realistic / $51 worst case** (corrected 2026-09-01 from measured usage; was ~$32) |
 
 Extraction keeps Bo's instructions + assistant text; drops thinking/tool_use/
 tool_result (so v2 lacks the raw code/command-outputs — those live in v1 only;
@@ -56,8 +75,11 @@ RATIFIED item 6). It didn't just cut cost — cleaner input measurably improved
 catalog fidelity (fence, scoring, ontology all better). v2 intake 4 quarantines
 (2 .bin + 2 ocr_failed PDFs), 3h13m (OCR slow lane on ~130 PDFs dominated).
 
-Session spend to date: ~$10.5 (S1 $1.64+$0.91, FERRYMAN $6.63, v2 discover
-$1.22, OUTREACH $0.09, smokes). Balance ~$6.8.
+Spend to date: ~$10.7 through 2026-08-01 (S1 $1.64+$0.91, FERRYMAN $6.63, v2
+discover $1.22, OUTREACH $0.09, smokes) + **$0.19 on 2026-09-01** (collection
+#2 end-to-end $0.17, a one-card re-read $0.014). Balance MEASURED $15.15 at
+2026-09-01T09:40Z — the operator topped up since the previous session's
+"~$6.8". Harness-lane work cost $0 cash (Modal quota only).
 
 ## Rung scoreboard
 
@@ -88,7 +110,7 @@ $1.22, OUTREACH $0.09, smokes). Balance ~$6.8.
 (the exact golden-authoring pair); non-thinking t=0 JSON -> CardV0; cards
 append-only fsync'd in catalog/cards/cards.jsonl, typed quarantines beside it;
 resume = skip present keys (unit-tested: zero dupes zero gaps, incl. truncated
-file); calibration every 50 batches on rotating 8-shard golden subsets with
+file); calibration every 50 batches on rotating 16-shard golden subsets with
 halt-below-bar (drilled TWICE: unit test + live on the real archive — mean
 0.000 -> checkpoint-clean halt, zero cards, halt journaled); EmbedSidecar
 :8092 wired (attach-or-launch, qwen3-embedding pinned); catalog/index.sqlite =
@@ -413,21 +435,6 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
 - OCR sidecar (:8091) and embed sidecar (:8092) may still be resident;
   attach case finds them, or kill to free ~8GB VRAM.
 
-## BLOCKED
-
-- **Full-corpus P2 (api lane): operator top-up of about $25.** Realistic cost
-  ~$37 (~$39 with retries), worst case $51 — measured, not guessed (the old
-  ~$32 came from a 3x-low output estimate). Balance measured $15.15 on
-  2026-09-01, so ~40% of the corpus is readable today if the operator
-  prefers partial-now (the read is resumable, so a partial run is not
-  wasted). This is the ONLY path to the full catalog
-  now: the harness lane's worker model failed qualification (round-9 verdict
-  — 0.26-0.37 vs the charter, 0.497 self-agreement, bar 0.55; zero cards
-  shipped, $0 spent). The Modal 429 window from earlier resolved on its own
-  and is NOT the blocker; the model's reproducibility is.
-- Nothing else. (Collection #2 chain was in flight at write time — see
-  `_local/collection2_chain.log`.)
-
 ## Next session's first move
 
 Read this file + RATIFIED.md (items 7-9 are new). The harness qualification
@@ -436,20 +443,31 @@ obsolete — every calibration attempt was refused checkpoint-clean and the
 evidence is in HARNESS_MODE_DESIGN.md). Then:
 
 1. ~~Collection #2~~ DONE (section above; numbers recorded).
-2. If the operator topped up the DeepSeek balance: launch the full v2 api
-   read (command in TL;DR; CALIB_SHARDS defaults 16 now). When it finishes:
-   `scriptorium.cmd fence C:\_DAD\projects-mirror-archive-v2 --derive` for
-   the whole-catalog fence rate + derived spans, then S3 (`map` + `reread`),
-   then S4 (`synthesize` + `certify` — the certificate is the product).
+2. **If the balance is topped up, launch the full v2 api read** — it is
+   background, capped, resumable, kill-safe, memory-bounded, and its lease
+   now renews:
+   ```
+   scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 55
+   ```
+   Expect ~$37 realistic and several hours. When it finishes:
+   ```
+   scriptorium.cmd fence C:\_DAD\projects-mirror-archive-v2 --derive
+   scriptorium.cmd query C:\_DAD\projects-mirror-archive-v2
+   ```
+   for the whole-catalog fence rate + derived spans and a look at what it
+   found — then S3 (`map` + `reread`), then S4 (`synthesize` + `certify` —
+   the certificate is the product).
+   If a run halts on the cap, rerun the same command: it resumes.
 3. If a stronger DSH worker model appears: re-run the FERRYMAN qualification
    slice with `SCRIPTORIUM_HARNESS_MODEL=<model>` — one command, ~5 min, $0;
    the calibration gate gives the verdict.
 
-Span fence-check (spancheck.py) is BUILT and is the S2 gate's fence item;
-whole-corpus rate prints after the full read. Exact-offset is 0% on both tapes
-(model char-offsets are useless) — S4's certify must DERIVE spans by locating
-quotes, never trust model offsets; the P5 renderer only ships fence-located
-spans, so the 12-28% unlocated can't surface as verbatim.
+The fence is no longer only a meter: `spancheck.locate`/`derive_spans` write
+`catalog/cards/spans.jsonl` with spans DERIVED from the Tape (model offsets
+measured 0% usable on both tapes and are never trusted). 87.2%/87.4% of
+quotes locate on the two measured catalogs; the rest have no coordinates and
+therefore cannot render as verbatim — which is what S4's certify and the P5
+two-register renderer are built on.
 
 DEEPSEEK_API_KEY in .env; scriptorium_cc key is repo-scoped; operator
 deactivates it when the build-out ends. Keep the GitHub repo current
