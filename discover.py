@@ -666,10 +666,15 @@ def run_freeze(target: str | Path) -> dict[str, Any]:
 
     slock_path = CODE_DIR / "scriptorium.lock"
     slock = json.loads(slock_path.read_text("utf-8"))
-    slock["charter"] = {"status": "frozen", "archive": str(root),
-                       "rubric_v": meta.get("rubric_v"),
-                       "ontology_v": meta.get("ontology_v"),
-                       "root_fingerprint": root_fp, "frozen_at": meta["frozen_at"]}
+    # one row per archive: freezes must never overwrite each other's record
+    # (the truth stays each archive's own charter.lock; this is the roster)
+    slock.setdefault("charters", {})[root.name] = {
+        "status": "frozen", "archive": str(root),
+        "model_fp": meta.get("model_fp"),
+        "rubric_v": meta.get("rubric_v"),
+        "ontology_v": meta.get("ontology_v"),
+        "root_fingerprint": root_fp, "frozen_at": meta["frozen_at"]}
+    slock.pop("charter", None)          # legacy single-archive block
     slock_path.write_text(json.dumps(slock, ensure_ascii=False, indent=2) + "\n", "utf-8")
     print(f"charter FROZEN: {len(fps)} artifacts fingerprinted, root {root_fp}")
     print(f"  charter.lock at {lock_path}; scriptorium.lock charter block updated")

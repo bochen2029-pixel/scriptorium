@@ -211,7 +211,10 @@ def test_discover_freeze_end_to_end(p1_stub, monkeypatch, tmp_path):
     assert (charter / "charter.lock").exists()
     assert len(lock["fingerprints"]) == 4 + 6 + 3
     slock = json.loads((sandbox / "scriptorium.lock").read_text("utf-8"))
-    assert slock["charter"]["status"] == "frozen"
+    row = slock["charters"][arch.name]         # one row per archive, never
+    assert row["status"] == "frozen"           # overwritten by another freeze
+    assert row["root_fingerprint"] == lock["root_fingerprint"]
+    assert "charter" not in slock              # legacy single block retired
     assert parse_yamlite((charter / "charter.yaml").read_text("utf-8"))["status"] == "frozen"
 
     with pytest.raises(SystemExit, match="already exists"):

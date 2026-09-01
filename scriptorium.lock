@@ -125,13 +125,25 @@
       "blake2b128": "4529b2fb32c0c37ae318a9805ddd51ea"
     }
   },
-  "charter": {
-    "status": "frozen",
-    "archive": "C:\\_DAD\\projects-mirror-archive-v2",
-    "rubric_v": "r1",
-    "ontology_v": "o1",
-    "root_fingerprint": "a7d94b8ee9f6bb5ff97b401f3c3bbbf1",
-    "frozen_at": "2026-08-01T05:27:18+00:00"
+  "charters": {
+    "projects-mirror-archive": {
+      "status": "frozen",
+      "archive": "C:\\_DAD\\projects-mirror-archive",
+      "model_fp": "deepseek-v4-flash",
+      "rubric_v": "r1",
+      "ontology_v": "o1",
+      "root_fingerprint": "209ed2439de94905ebe99f7da60b2ffd",
+      "frozen_at": "2026-07-31T20:22:45+00:00"
+    },
+    "projects-mirror-archive-v2": {
+      "status": "frozen",
+      "archive": "C:\\_DAD\\projects-mirror-archive-v2",
+      "model_fp": "deepseek-v4-flash",
+      "rubric_v": "r1",
+      "ontology_v": "o1",
+      "root_fingerprint": "a7d94b8ee9f6bb5ff97b401f3c3bbbf1",
+      "frozen_at": "2026-08-01T05:27:18+00:00"
+    }
   },
   "canon_vectors": {
     "serialization": [
