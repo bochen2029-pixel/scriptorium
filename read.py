@@ -67,6 +67,13 @@ HARNESS_CONCURRENCY = 6   # HM-7: each slot is a full runtime subprocess
 OUT_TOKENS = 6000         # per-card output budget; dense chunks that exhaust
                           # it quarantine as json-hostile — --max-out-tokens
                           # raises it for a --retry-quarantined rerun
+# Estimation inputs, MEASURED from real card calls (2026-09-01) rather than
+# guessed: mean completion was 2,578 tok/card on the v2 tape and 1,801 on the
+# repo corpus (the old 900 under-counted output ~3x, which quietly cancelled
+# the input side's no-cache-credit pessimism). The prefix cache rate is what
+# the same runs realized: 46% (v2) / 53% (repo).
+EST_OUT_TOKENS = 2600
+EST_CACHE_HIT_RATE = 0.46
 
 
 def _refcard_prompt() -> str:
@@ -275,10 +282,22 @@ async def run_read(target: str | Path, *, usd_cap: float,
             return {"run_id": run_id, "cards": 0, "already": len(selected)}
 
         est_in = sum(r.tokens for r in todo) + prefix_tokens * len(todo)
-        est_out = 900 * len(todo)
+        est_out = EST_OUT_TOKENS * len(todo)
+        # PS-8 gates on the WORST case (every input token billed as a cache
+        # miss); the realistic line is printed beside it so a cap can be set
+        # from evidence instead of from the worst case alone.
         est = client.gate_estimate(est_in, est_out)
-        say(f"  PS-8 gate: estimate ${est:.2f} under cap ${usd_cap:.2f} "
-            f"(prefix ~{prefix_tokens} tok/call) — proceeding")
+        prices = client.meter.prices
+        hit = est_in * EST_CACHE_HIT_RATE
+        realistic = ((est_in - hit) * prices["input_cache_miss"]
+                     + hit * prices["input_cache_hit"]
+                     + est_out * prices["output"]) / 1e6
+        say(f"  PS-8 gate: worst case ${est:.2f} (no cache credit) under cap "
+            f"${usd_cap:.2f} — proceeding")
+        say(f"    realistic ~${realistic:.2f} at the measured "
+            f"{EST_CACHE_HIT_RATE:.0%} prefix-cache rate "
+            f"({len(todo)} chunks, prefix ~{prefix_tokens} tok/call, "
+            f"~{EST_OUT_TOKENS} out/card)")
 
         # Bounded memory: index the tape's text records once, then read each
         # batch's chunks on demand. Loading every selected text upfront costs

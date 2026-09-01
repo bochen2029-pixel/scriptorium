@@ -20,8 +20,14 @@ verifiable, negatives forever):
 
 **Two lanes exist. The qualification question is ANSWERED (2026-09-01):**
 - **api lane — QUALIFIED, and the only production reader today.** Needs the
-  operator top-up (~$32 at $0.184/M; balance MEASURED $15.15 — about half),
-  then `scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 35`.
+  operator top-up. **Corrected projection (2026-09-01, from measured card
+  calls rather than the old guess): realistic ~$37, ~$39 with retries; worst
+  case $51 if nothing caches.** The earlier ~$32 came from an estimator that
+  assumed 900 output tokens/card when the real mean is 2,578 (v2) / 1,801
+  (repo) — see "the cost model was wrong" below. Balance MEASURED $15.15, so
+  a full read needs roughly **$25 more**; run it with a generous cap:
+  `scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 55`
+  (PS-8 gates on the worst case, so a $40 cap would refuse a $37 run).
 - **harness lane — the LANE is proven; the WORKER MODEL is not.** Four live
   calibration runs on corpus #1's frozen charter scored 0.262-0.370 (bar
   0.55); GLM-5.3-Flash's agreement with ITSELF on the same shards is 0.497 vs
@@ -238,6 +244,20 @@ byte-identical** to the old path. Validated end-to-end on collection #2:
 resume finds zero work; a forced re-read produced a same-shape card under the
 same charter root with zero dupes/gaps and the fence unchanged at 87.43%.
 
+**The cost model was wrong, and it is the number the top-up decision rests
+on.** `read.py` estimated 900 output tokens per card; measured across every
+real card call it is **2,578 (v2 tape) / 1,801 (repo corpus)** — roughly 3x
+under. That optimism had been quietly cancelling the input side's pessimism
+(the gate bills every input token as a cache miss), so the headline came out
+plausible for the wrong reasons. Now both sides are honest and BOTH are
+printed: PS-8 still gates on the worst case, and the realistic figure at the
+measured 46% prefix-cache rate is shown beside it so a cap can be set from
+evidence. Full v2 read: **worst case $51, realistic ~$37 (~$39 with
+retries)** — up from the recorded ~$32. Measured per-card reality also
+confirms the parked observation that some cards exhaust the 6,000-token
+budget (p90 = 6,000 on both corpora), which is what `--max-out-tokens` +
+`--retry-quarantined` are for.
+
 **Two latent defects in the api seam (`ds.py`), both fail-proven against the
 old code:** a transport-error retry slept INSIDE the AIMD gate (a network
 wobble would park every concurrency slot on sleeping calls), and a first
@@ -395,9 +415,12 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
 
 ## BLOCKED
 
-- **Full-corpus P2 (api lane): operator top-up** (~$32; balance measured
-  $15.15 on 2026-09-01 — covers roughly half; a half-corpus read is possible
-  today if the operator prefers). This is the ONLY path to the full catalog
+- **Full-corpus P2 (api lane): operator top-up of about $25.** Realistic cost
+  ~$37 (~$39 with retries), worst case $51 — measured, not guessed (the old
+  ~$32 came from a 3x-low output estimate). Balance measured $15.15 on
+  2026-09-01, so ~40% of the corpus is readable today if the operator
+  prefers partial-now (the read is resumable, so a partial run is not
+  wasted). This is the ONLY path to the full catalog
   now: the harness lane's worker model failed qualification (round-9 verdict
   — 0.26-0.37 vs the charter, 0.497 self-agreement, bar 0.55; zero cards
   shipped, $0 spent). The Modal 429 window from earlier resolved on its own
