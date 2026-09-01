@@ -214,3 +214,53 @@ def test_try_claim_semantics():
     b3 = fake_bridge([CP(1, "", "bus dead")], [])
     b3.me = "x"
     assert a2a.try_claim(b3, "r") is True            # soft failure: proceed
+
+
+def test_heartbeat_renews_the_pass_lease_before_it_lapses(monkeypatch):
+    """A multi-hour read must keep its lease: re-claiming your own resource
+    RENEWS it (intercom _claim_cas), and an EXPIRED lease can be stolen by
+    anyone — so claiming once and never renewing loses the double-driver
+    guard 15 minutes in."""
+    log: list[list[str]] = []
+    b = fake_bridge([], log)
+    b.me = "x"
+    b.resource = "scriptorium:arch:p2-read"
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(a2a.time, "monotonic", lambda: clock["t"])
+
+    b.claimed_at = clock["t"]
+    a2a.heartbeat(b)
+    assert log == []                       # too soon: no bus traffic at all
+
+    clock["t"] += a2a.LEASE_RENEW_AFTER + 1
+    a2a.heartbeat(b)
+    assert log and log[0][0] == "claim"
+    assert log[0][log[0].index("--resource") + 1] == "scriptorium:arch:p2-read"
+    assert b.claimed_at == clock["t"]
+
+    log.clear()
+    a2a.heartbeat(b)                       # clock unchanged: no second claim
+    assert log == []
+
+
+def test_heartbeat_never_halts_the_pass(monkeypatch):
+    """Losing the lease is loud, not fatal: cards are terminal and fsync'd,
+    the resume law keeps keys single-writer, and per-chunk leases keep
+    concurrent drivers apart — killing a paid multi-hour run over
+    coordination sugar would be the worse failure."""
+    clock = {"t": 5000.0}
+    monkeypatch.setattr(a2a.time, "monotonic", lambda: clock["t"])
+
+    stolen = fake_bridge([CP(3, "", "held by q7")], [])
+    stolen.me, stolen.resource, stolen.claimed_at = "x", "r", 0.0
+    a2a.heartbeat(stolen)                  # refused -> warned, no raise
+    assert stolen.claimed_at == clock["t"]  # and not retried every batch
+
+    dead = fake_bridge([CP(1, "", "bus down")], [])
+    dead.me, dead.resource, dead.claimed_at = "x", "r", 0.0
+    a2a.heartbeat(dead)                    # soft failure -> no raise
+
+    a2a.heartbeat(None)                    # disabled -> pure no-op
+    nores = fake_bridge([], [])
+    nores.me = "x"
+    a2a.heartbeat(nores)                   # joined but uncoordinated -> no-op

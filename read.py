@@ -341,6 +341,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
 
         batches = [todo[i:i + batch_size] for i in range(0, len(todo), batch_size)]
         for bi, batch in enumerate(batches):
+            a2a.heartbeat(bridge)      # a multi-hour read must keep its lease
             if bi % calib_every == 0:
                 mean = await calibrate(bi // calib_every)
                 stats["calibrations"].append(round(mean, 4))

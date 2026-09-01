@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -39,6 +40,11 @@ from typing import Any
 INTERCOM_PY = "C:/Intercom/intercom.py"
 BODY_CAP = 4000
 LEASE_TTL = 900
+# A pass lease must outlive the pass. Re-claiming your own resource RENEWS it
+# (intercom _claim_cas: holder == me -> "renewed"), and an EXPIRED lease can be
+# taken by anyone — so a multi-hour read that claims once silently loses its
+# double-driver guard 15 minutes in. Renew at a third of the TTL.
+LEASE_RENEW_AFTER = LEASE_TTL / 3
 
 
 def _driver_identity() -> tuple[str, str]:
@@ -87,6 +93,7 @@ class IntercomBridge:
         self._runner = runner or self._subprocess_runner
         self.me: str | None = None
         self.resource: str | None = None
+        self.claimed_at: float = 0.0        # monotonic; 0 = never claimed
 
     def _subprocess_runner(self, argv: list[str]) -> Any:
         try:
@@ -168,9 +175,37 @@ def begin(pass_name: str, archive_name: str) -> IntercomBridge | None:
         _note(f"bus unavailable ({e}) — pass runs WITHOUT A2A")
         return None
     bridge.resource = resource
+    bridge.claimed_at = time.monotonic()
     _note(f"joined as {me} (project {bridge.project}, lane {bridge.lane}, "
           f"lease {resource})")
     return bridge
+
+
+def heartbeat(bridge: IntercomBridge | None) -> None:
+    """Renew the pass lease before it can lapse (call at batch boundaries;
+    it no-ops until a third of the TTL has passed, so it costs one subprocess
+    every ~5 minutes). Doubles as agent liveness, which is what --steal-stale
+    reads. Never raises, and NEVER halts the pass: if the lease was already
+    stolen, cards are still terminal-and-fsync'd, the resume law keeps every
+    key single-writer, and per-chunk leases keep concurrent drivers apart —
+    so the honest response is a loud warning, not killing a paid multi-hour
+    run over coordination sugar."""
+    if bridge is None or not bridge.resource:
+        return
+    now = time.monotonic()
+    if now - bridge.claimed_at < LEASE_RENEW_AFTER:
+        return
+    try:
+        bridge.claim(bridge.resource)
+        bridge.claimed_at = now
+    except A2ARefused as e:
+        bridge.claimed_at = now             # don't retry every batch
+        _note(f"WARNING pass lease {bridge.resource} is now held by another "
+              f"driver ({e}) — continuing (cards are idempotent by key; "
+              f"per-chunk leases still prevent double work)")
+    except Exception as e:  # noqa: BLE001 — coordination must not fail a pass
+        bridge.claimed_at = now
+        _note(f"lease renewal failed ({type(e).__name__}) — continuing")
 
 
 def note(bridge: IntercomBridge | None, body: str) -> None:

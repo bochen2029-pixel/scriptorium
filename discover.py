@@ -460,6 +460,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         say("  charter drafts written (ontology.yaml, rubric_P2.md, prior.md)")
 
         # -- golden shards ---------------------------------------------------
+        a2a.heartbeat(bridge)          # phases run for minutes each
         say(f"  authoring {len(shard_rows)} golden shards "
             f"({min(defects_n, len(shard_rows))} with planted defects) ...")
         refcard_sys = rubric_out.rubric_md + "\n\n" + _prompt("p1_refcard_v0")
@@ -506,6 +507,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         say(f"  goldens: {len(shards)} shards written, {n_defects} defective; "
             f"meter ${client.meter.usd():.3f}, hit-rate {client.meter.hit_rate():.0%}")
 
+        a2a.heartbeat(bridge)
         # -- golden syntheses ------------------------------------------------
         syn_dir = charter / "goldens" / "syntheses"
         syn_dir.mkdir(parents=True, exist_ok=True)
@@ -543,6 +545,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         means = []
         reps = []
         for n in (1, 2):
+            a2a.heartbeat(bridge)
             rep = await _score_once(client, shards, refcard_sys, say, n)
             means.append(rep["mean"])
             reps.append(rep)
