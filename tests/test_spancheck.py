@@ -1,9 +1,10 @@
-"""The span fence: exact / substring / miss / no-offset classification."""
+"""The span fence: exact / substring / miss / no-offset classification, and
+the DERIVED-span artifact (model offsets are never trusted)."""
 
 import json
 
 from conftest import fresh_dir
-from spancheck import fence_check
+from spancheck import derive_spans, fence_check, locate
 from tape import Tape
 
 TEXT = "The negatives are forever. The fence certifies what the readers claim."
@@ -62,6 +63,38 @@ def test_exact_when_offsets_include_whitespace():
     ])
     rep = fence_check(arch)
     assert rep["exact"] == 1 and rep["substring"] == 0
+
+
+def test_locate_derives_spans_and_refuses_fabrication():
+    text = "Alpha beta.\nThe fence   certifies\n  what readers claim."
+    assert locate(text, "Alpha beta.") == (0, 11, "find")
+    # a reflowed quote: words real, layout not -> derived from the raw text
+    start, end, method = locate(text, "The fence certifies what readers claim.")
+    assert method == "whitespace"
+    assert text[start:end] == "The fence   certifies\n  what readers claim."
+    assert locate(text, "never written here") is None    # no coordinates ever
+    assert locate(text, "   ") is None
+
+
+def test_derive_spans_writes_located_only(tmp_path):
+    """The sidecar carries derived spans for located quotes ONLY — an
+    unlocated quote simply has no row, so it cannot render as verbatim."""
+    arch = fresh_dir("spancheck-derive")
+    make_catalog(arch, quotes=[
+        {"text": "The negatives are forever.", "start": 999, "end": 1050},  # junk offsets
+        {"text": "fence   certifies", "start": -1, "end": -1},              # reflowed
+        {"text": "invented entirely", "start": 3, "end": 20},               # fabrication
+    ])
+    stats = derive_spans(arch)
+    assert stats["quotes"] == 3 and stats["located"] == 2
+    assert stats["unlocated"] == 1 and stats["located_rate"] == 0.6667
+    rows = [json.loads(x) for x in
+            (arch / "catalog" / "cards" / "spans.jsonl").read_text("utf-8").splitlines()]
+    assert len(rows) == 2
+    assert rows[0]["start"] == 0 and rows[0]["text"] == "The negatives are forever."
+    assert rows[0]["method"] == "find" and rows[0]["quote"] == 0
+    assert rows[1]["quote"] == 1 and "certifies" in rows[1]["text"]
+    assert all(TEXT[r["start"]:r["end"]] == r["text"] for r in rows)   # spans are true
 
 
 def test_unfetchable_chunk_is_not_fabrication():

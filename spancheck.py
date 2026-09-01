@@ -36,6 +36,32 @@ def _squash(s: str) -> str:
     return _WS.sub(" ", s).strip().lower()
 
 
+def locate(text: str, quote: str) -> tuple[int, int, str] | None:
+    """DERIVE a quote's true span in the chunk — the constitutional answer to
+    model-emitted offsets being unusable (measured 0% exact on both tapes;
+    STATE.md). Returns (start, end, method) or None when the quote is not in
+    the chunk at all (fabrication — which must never be given coordinates).
+
+    Two tiers, mirroring the fence's own verification tiers:
+      find       — the quote is present byte-for-byte
+      whitespace — present once newlines/indentation inside it are folded
+                   (the model reflows quotes); matched case-insensitively,
+                   the same tolerance _squash already grants
+    """
+    q = quote.strip()
+    if not q:
+        return None
+    i = text.find(q)
+    if i >= 0:
+        return i, i + len(q), "find"
+    toks = q.split()
+    if not toks:
+        return None
+    pat = re.compile(r"\s+".join(map(re.escape, toks)), re.IGNORECASE)
+    m = pat.search(text)
+    return (m.start(), m.end(), "whitespace") if m else None
+
+
 def fence_check(archive_root: str | Path, limit: int | None = None) -> dict[str, Any]:
     root = Path(archive_root)
     cards_path = root / "catalog" / "cards" / "cards.jsonl"
@@ -116,6 +142,60 @@ def fence_check(archive_root: str | Path, limit: int | None = None) -> dict[str,
     }
 
 
+def derive_spans(archive_root: str | Path,
+                 out_name: str = "spans.jsonl") -> dict[str, Any]:
+    """Write catalog/cards/<out_name>: one row per LOCATED quote, carrying the
+    span this code derived — never the model's. Cards stay append-only and
+    keep the model's raw output; this is the separate, deterministic artifact
+    the P5 two-register renderer and S4's certify read, so an unlocated quote
+    structurally cannot ship as verbatim (it simply has no row here)."""
+    root = Path(archive_root)
+    cards_path = root / "catalog" / "cards" / "cards.jsonl"
+    if not cards_path.exists():
+        raise SystemExit(f"no cards at {cards_path} — run `read` first")
+    rows = []
+    with open(cards_path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    texts = fetch_texts(root, {(r["doc_id"], r["seq"]) for r in rows})
+    out_path = cards_path.parent / out_name
+    stats = {"quotes": 0, "located": 0, "find": 0, "whitespace": 0,
+             "unlocated": 0, "cards_unfetchable": 0}
+    with open(out_path, "w", encoding="utf-8") as out:
+        for row in rows:
+            text = texts.get((row["doc_id"], row["seq"]))
+            if text is None:
+                stats["cards_unfetchable"] += 1
+                continue
+            for i, quote in enumerate(row["card"].get("quotes", [])):
+                qt = (quote.get("text") or "").strip()
+                if not qt:
+                    continue
+                stats["quotes"] += 1
+                hit = locate(text, qt)
+                if hit is None:
+                    stats["unlocated"] += 1
+                    continue
+                start, end, method = hit
+                stats["located"] += 1
+                stats[method] += 1
+                out.write(json.dumps(
+                    {"doc_id": row["doc_id"], "seq": row["seq"], "quote": i,
+                     "start": start, "end": end, "method": method,
+                     "text": text[start:end]}, ensure_ascii=False) + "\n")
+    stats["located_rate"] = (round(stats["located"] / stats["quotes"], 4)
+                             if stats["quotes"] else None)
+    stats["path"] = str(out_path)
+    return stats
+
+
 if __name__ == "__main__":
     import sys
-    print(json.dumps(fence_check(sys.argv[1]), ensure_ascii=False, indent=1))
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if "--derive" in sys.argv:
+        print(json.dumps(derive_spans(args[0]), ensure_ascii=False, indent=1))
+    else:
+        print(json.dumps(fence_check(args[0]), ensure_ascii=False, indent=1))
