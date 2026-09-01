@@ -222,6 +222,22 @@ quote is withheld and counted, never rendered as verbatim, so the window
 cannot launder a fabrication. Terminal control bytes from archived console
 captures are neutered before display.
 
+**The full-corpus read is now memory-safe** (`textindex.py`, the parked "tape
+kind-index sidecar"). `read.py` used to load EVERY selected chunk's text into
+RAM before the first card — fine for a slice, ~1GB of Python strings held for
+hours on the 172M-token corpus, plus a full tape pass before any card is
+written. Now: one pass records each text record's byte offset into a derived
+sqlite beside the tape, and each batch seeks for exactly the chunks it needs.
+Derived + regenerable (segments stay the truth), append-aware (an extended
+tape indexes only new records), and honest (an unservable key returns None; a
+stale offset pointing at the wrong record is REFUSED, never guessed; chunks
+the tape cannot serve become typed quarantines, never a crash or a silent
+skip). Measured on the real 583MB v2 tape: **index builds in 3.2s** (27,448
+records, 3.1MB file), and fetching a catalog's texts goes **2.1s → under 1ms,
+byte-identical** to the old path. Validated end-to-end on collection #2:
+resume finds zero work; a forced re-read produced a same-shape card under the
+same charter root with zero dupes/gaps and the fence unchanged at 87.43%.
+
 **Two latent defects in the api seam (`ds.py`), both fail-proven against the
 old code:** a transport-error retry slept INSIDE the AIMD gate (a network
 wobble would park every concurrency slot on sleeping calls), and a first
@@ -369,10 +385,11 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
 - Embedding truncation: vectors embed chunk[:8000] chars (sidecar ctx
   safety) — document/decide before the resident-skeleton stage cares.
 - Parked from earlier (still live): Baidu Unlimited-OCR S2+ eval plan ·
-  read-only Tape.open · session-jsonl content extractor (would cut this
-  corpus ~3-5x for a v2 catalog) · walk on_error journaling · LSH banding ·
-  tape kind-index sidecar (scan_tape does 2 full 4.3GB passes per pass-run) ·
-  OCR latency tuning · PyYAML.
+  read-only Tape.open · ~~session-jsonl content extractor~~ (DONE — v2 tape) ·
+  walk on_error journaling · LSH banding · ~~tape kind-index sidecar~~ (DONE
+  2026-09-01 — `textindex.py`; `scan_tape` still does its own pass, so a full
+  read now costs 2 passes + a 3s index build rather than 2 passes + a full
+  in-RAM text load) · OCR latency tuning · PyYAML.
 - OCR sidecar (:8091) and embed sidecar (:8092) may still be resident;
   attach case finds them, or kill to free ~8GB VRAM.
 
