@@ -554,6 +554,14 @@ evidence is in HARNESS_MODE_DESIGN.md). Then:
 3. If a stronger DSH worker model appears: re-run the FERRYMAN qualification
    slice with `SCRIPTORIUM_HARNESS_MODEL=<model>` — one command, ~5 min, $0;
    the calibration gate gives the verdict.
+4. **The resident driver** (a sleeping DSH-side daemon woken by Intercom,
+   plus the S5 LIVE annex) is PROPOSED, not built:
+   `_run_state/RESIDENT_DRIVER_PROPOSAL.md` — three tiers (doorbell →
+   sexton daemon → journal-fed increments + elicitation loop), a closed job
+   grammar so bus bodies can never become commands, two-phase money, the
+   DSH `PreToolUse` hook as a firewall below the model, phases A–F each with
+   falsifiers, and seven ratification items (§11). Phase A (`serve`, direct
+   mode) is ~1 day and needs only the spend ceilings ratified.
 
 The fence is no longer only a meter: `spancheck.locate`/`derive_spans` write
 `catalog/cards/spans.jsonl` with spans DERIVED from the Tape (model offsets
