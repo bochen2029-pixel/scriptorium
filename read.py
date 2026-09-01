@@ -204,6 +204,75 @@ class CatalogIndex:
 
 # -- the pass --------------------------------------------------------------
 
+def backfill_vectors(target: str | Path, batch: int = 16) -> dict[str, Any]:
+    """Embed carded chunks that have no vector yet — local sidecar only, no
+    API, no charter. This exists because "deferred to a rerun" was NOT true:
+    a rerun skips already-carded chunks by the resume law, so a read that ran
+    while :8092 was down could never gain its vectors. Idempotent and
+    resumable; safe to run any time."""
+    _mf, root = load_manifest(target)
+    cards_path = root / "catalog" / "cards" / "cards.jsonl"
+    if not cards_path.exists():
+        raise SystemExit(f"no cards at {cards_path} — run `read` first")
+    keys: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    with open(cards_path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                row = json.loads(line)
+                key = (row["doc_id"], row["seq"])
+            except (json.JSONDecodeError, KeyError):
+                continue
+            if key not in seen:
+                seen.add(key)
+                keys.append(key)
+
+    index = CatalogIndex(root / "catalog" / "index.sqlite")
+    missing = [k for k in keys if not index.has_vector(k)]
+    print(f"cards {len(keys)} | already vectored {len(keys) - len(missing)} | "
+          f"missing {len(missing)}")
+    if not missing:
+        index.commit_close()
+        return {"cards": len(keys), "missing": 0, "added": 0}
+
+    sidecar = EmbedSidecar()
+    if not sidecar.ensure(launch=True):
+        index.commit_close()
+        raise SystemExit("embedding sidecar (:8092) unavailable — cannot "
+                         "backfill; start it and rerun")
+    reader = TextReader(root)
+    added, unreadable = 0, 0
+    try:
+        for i in range(0, len(missing), batch):
+            grp = missing[i:i + batch]
+            texts = reader.get_many(grp)
+            have = [k for k in grp if k in texts]
+            unreadable += len(grp) - len(have)
+            if not have:
+                continue
+            try:
+                vecs = sidecar.embed([texts[k][:8000] for k in have])
+            except Exception as e:  # noqa: BLE001 — report, never half-claim
+                print(f"  embed failed at {i}: {str(e)[:150]} — stopping; "
+                      f"{added} added so far are committed")
+                break
+            for k, v in zip(have, vecs, strict=True):
+                index.add_vector(k, v, sidecar.fingerprint()["embedder"])
+                added += 1
+            index.db.commit()
+            print(f"  {min(i + batch, len(missing))}/{len(missing)} ...",
+                  flush=True)
+    finally:
+        reader.close()
+        counts = index.counts()
+        index.commit_close()
+    print(f"backfill done: +{added} vectors"
+          + (f" | {unreadable} chunks unreadable from the tape" if unreadable else "")
+          + f" | index now {counts}")
+    return {"cards": len(keys), "missing": len(missing), "added": added,
+            "unreadable": unreadable, "index": counts}
+
+
 def select_rows(rows: list[RecRow], projects: list[str] | None,
                 max_tokens: int | None) -> list[RecRow]:
     picked = rows
@@ -356,7 +425,10 @@ async def run_read(target: str | Path, *, usd_cap: float,
             sidecar = EmbedSidecar()
             if not sidecar.ensure(launch=True):
                 say("  WARNING: embedding sidecar unavailable — cards proceed, "
-                    "vectors deferred to a rerun (reported honestly)")
+                    "vectors deferred; backfill later with "
+                    "`scriptorium.cmd vectors <archive>` (a plain rerun will "
+                    "NOT do it: these chunks are already carded, so the resume "
+                    "law skips them)")
                 sidecar = None
 
         await client.warmup(system)

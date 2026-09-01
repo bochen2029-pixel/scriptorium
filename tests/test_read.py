@@ -243,3 +243,36 @@ def test_dry_run_preflights_without_spending(stubs, monkeypatch):
     # the real read still works afterwards, unaffected
     real = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
     assert real["cards"] == 12
+
+
+def test_backfill_vectors_reaches_chunks_a_rerun_cannot(stubs):
+    """A read that ran while :8092 was down leaves carded chunks with no
+    vector — and a plain rerun can never fix them, because the resume law
+    skips already-carded keys. The backfill is the only path, and it must be
+    idempotent."""
+    from read import backfill_vectors
+
+    arch = frozen_mini(stubs)
+    asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    db_path = arch / "catalog" / "index.sqlite"
+
+    import sqlite3
+    db = sqlite3.connect(db_path)
+    db.execute("DELETE FROM vectors")                # simulate a sidecar-down read
+    db.commit()
+    assert db.execute("SELECT COUNT(*) FROM vectors").fetchone()[0] == 0
+    db.close()
+
+    # a rerun does nothing: those chunks are carded, so they are not todo
+    rerun = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    assert rerun.get("cards", 0) == 0
+    db = sqlite3.connect(db_path)
+    assert db.execute("SELECT COUNT(*) FROM vectors").fetchone()[0] == 0
+    db.close()
+
+    rep = backfill_vectors(arch)
+    assert rep["missing"] == 12 and rep["added"] == 12
+    assert rep["index"]["vectors"] == 12
+
+    again = backfill_vectors(arch)                   # idempotent
+    assert again["missing"] == 0 and again["added"] == 0

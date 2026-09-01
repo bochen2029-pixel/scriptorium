@@ -217,7 +217,9 @@ def main(argv: list[str] | None = None) -> int:
                         ("fence", "span fence over the catalog (deterministic, "
                                   "no LLM); --derive writes code-located spans"),
                         ("query", "read-only search over a finished catalog "
-                                  "(FTS + fence-verified quotes; no LLM)")):
+                                  "(FTS + fence-verified quotes; no LLM)"),
+                        ("vectors", "embed carded chunks that have no vector "
+                                    "yet (local :8092 sidecar; no API)")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("target", help="archive root dir or manifest path")
         if name == "intake" or name == "resume":
@@ -334,6 +336,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(_json.dumps(rep, ensure_ascii=False, indent=1) if args.json
               else text)
+        return 0
+    if args.cmd == "vectors":
+        from read import backfill_vectors
+        backfill_vectors(args.target)
         return 0
     if args.cmd == "fence":
         import json as _json
