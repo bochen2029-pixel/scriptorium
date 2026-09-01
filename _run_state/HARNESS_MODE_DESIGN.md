@@ -5,6 +5,36 @@ leases (multi-driver co-work), batch findings, artifact-pin attestation, and the
 patch (frozen prefix as the workers' REAL system role). 124 pytest + ruff clean.**
 Companion facts: `_run_state/NEIGHBOR_ORGANS.md` + `_run_state/survey/{intercom,dsh-harness}.md`.
 
+## Round-7 (Claude Code session): the modal path DROPS the system role — in-task is LAW for modal
+
+Attempt 2 of the slice (nonce-fixed sessions, clean persona, open Modal window: warmup + all 16
+calibration shards completed attempt-0, no retries) STILL scored **0.000** — and this time the
+composed system role was verified clean (persona + END boundary, zero foreign chars). GLM's own
+reasoning transcripts kept saying *"we don't see the schema … no binding contract exists"*.
+
+**Behavioral proof, one real Modal call:** persona = "when the user says 'ping', reply exactly
+'XYZZY-PONG-7741'"; task = `ping`. Reply: `"Pong! 👋 I'm here and ready to help."` — **no token.
+The modal/GLM-5.3-Flash path discards the `system` role entirely** (DSH composes it — the
+`request/header` carries it byte-perfect — but it never reaches the model). A direct
+quote-your-system-prompt probe refused (guardrail), so the behavioral probe is the evidence.
+
+Consequences, all landed:
+- BOTH 0.000 halts had ONE root cause: the workers saw only the task — never the rubric (and
+  never the "foreign tail" either; round-6's boundary/unmount work fixed a real composition
+  issue, but one the modal path made invisible).
+- Round-4's in-task success (calibration 0.574 on the real wire) was the correct architecture,
+  not a v1 stopgap. **In-task is the DEFAULT and the only correct mode for provider=modal.**
+- Persona/patch mode stays built + composition-proven for providers that honor `system`
+  (deepseek-official verified via mock composition) — **opt-in** via
+  `SCRIPTORIUM_HARNESS_SYSTEM_ROLE=patch`, because the drop is silent and only calibration
+  catches it. `SCRIPTORIUM_HARNESS_INTASK` is retired (in-task IS the default).
+- Also fixed en route (found by the smoke regressing on rerun): **session ids must be GLOBALLY
+  fresh** — the session store persists across runs and a fresh runtime given an on-disk id
+  errors instantly with a bare `finish=error`; ids now carry a per-client uuid nonce. This had
+  been poisoning watcher attempts beyond the real 429.
+- The calibration gate has now caught, in one day: a missing contract (twice, two different
+  causes) and would have caught the id collisions — three saves, zero bad cards shipped.
+
 ## Round-6 (Claude Code session): the persona patch meets a real model — fails honestly, hardened, re-proven
 
 The first REAL run under the persona patch (v2 FERRYMAN slice, 143 chunks) scored **calibration

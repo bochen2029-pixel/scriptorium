@@ -250,6 +250,12 @@ def main(argv: list[str] | None = None) -> int:
                            help="parallel unit calls (default: 48 for api; 6 "
                                 "for harness — each harness slot is a full "
                                 "runtime subprocess, HM-7)")
+            p.add_argument("--retry-quarantined", action="store_true",
+                           help="quarantined keys become todo again (cards "
+                                "win over quarantine history on retry)")
+            p.add_argument("--max-out-tokens", type=int, default=None,
+                           help="per-card output budget (default 6000; raise "
+                                "for dense chunks that quarantined)")
 
     for name in RUNG_STUBS:
         sub.add_parser(name, help=f"[{RUNG_STUBS[name][0]}] {RUNG_STUBS[name][1]}")
@@ -279,12 +285,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "read":
         import asyncio
 
-        from read import run_read
+        from read import OUT_TOKENS, run_read
         asyncio.run(run_read(
             args.target, usd_cap=args.cap,
             projects=args.projects.split(",") if args.projects else None,
             max_tokens=args.max_tokens, provider=args.provider,
-            embed=not args.no_embed, concurrency=args.concurrency))
+            embed=not args.no_embed, concurrency=args.concurrency,
+            retry_quarantined=args.retry_quarantined,
+            out_tokens=args.max_out_tokens or OUT_TOKENS))
         return 0
     rung, what = RUNG_STUBS[args.cmd]
     print(f"`{args.cmd}` is rung {rung} ({what}).\n"

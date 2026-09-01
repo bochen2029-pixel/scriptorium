@@ -16,11 +16,13 @@ _run_state/HARNESS_MODE_DESIGN.md. Mirror of ds.py's PS-1..PS-10:
         store persists across runs and re-running an on-disk id errors),
         frozen system prefix at the head of every task behind an explicit
         boundary marker, payload last, unit id + output budget line at the tail.
-        v2 (system_persona): a single-prefix pass (P2) promotes the frozen
-        prefix to the workers' REAL system role via a generated Cordis persona
-        patch (write_persona_patch; --patch overlays win over profile + user
+        v2 (system_persona, OPT-IN via SCRIPTORIUM_HARNESS_SYSTEM_ROLE=patch):
+        a single-prefix pass (P2) promotes the frozen prefix to the workers'
+        REAL system role via a generated Cordis persona patch
+        (write_persona_patch; --patch overlays win over profile + user
         layers); tasks then carry only discipline + payload + unit line.
-        SCRIPTORIUM_HARNESS_INTASK=1 is the kill switch back to in-task.
+        In-task stays the DEFAULT: the modal/GLM path drops `system`
+        silently (measured), and only calibration would catch it.
 - HM-3  the PS-3 ladder shape: fresh-session extract attempts x2 -> rescue x1
         -> UnitQuarantined (typed, metered, never dropped).
 - HM-4  consistency is enforced downstream (frozen-charter verify, calibration
@@ -147,8 +149,8 @@ def write_persona_patch(persona: str, path: Path) -> Path:
     if "{{" in persona:
         raise DsError(
             "frozen prefix contains '{{' — dsh-system-prompt persona templates "
-            "are strict; run with SCRIPTORIUM_HARNESS_INTASK=1 to use the "
-            "in-task contract instead")
+            "are strict; unset SCRIPTORIUM_HARNESS_SYSTEM_ROLE to use the "
+            "default in-task contract instead")
     body = (
         "# scriptorium harness-mode persona patch — generated per run (run evidence).\n"
         "# The frozen system prefix is the workers' real system role; harness\n"
@@ -328,13 +330,18 @@ class HarnessClient:
         if h_key:
             spec["api_key"] = h_key
         # HM-2 v2: one frozen prefix per pass may ride as the REAL system role
-        # (Cordis persona patch); SCRIPTORIUM_HARNESS_INTASK=1 is the kill
-        # switch back to the in-task contract. P1 uses several prefixes per
-        # pass and therefore never sets system_persona.
+        # (Cordis persona patch) — OPT-IN via SCRIPTORIUM_HARNESS_SYSTEM_ROLE=
+        # patch, for providers that honor `system`. MEASURED 2026-09-01: the
+        # modal/GLM-5.3-Flash path DROPS the system role entirely (behavioral
+        # probe: a persona rule was ignored; the composed request carried it).
+        # The drop is silent until calibration catches it, so in-task is the
+        # DEFAULT and the only correct mode for modal. P1 uses several
+        # prefixes per pass and never sets system_persona regardless.
         self.system_persona: str | None = None
         self.system_role = "in-task"
         self._persona_chars = 0
-        if system_persona and _env("SCRIPTORIUM_HARNESS_INTASK", "") != "1":
+        if (system_persona
+                and _env("SCRIPTORIUM_HARNESS_SYSTEM_ROLE", "") == "patch"):
             patch_dir = journal_path.parent if journal_path else home
             patch = write_persona_patch(system_persona,
                                         patch_dir / PERSONA_PATCH_NAME)

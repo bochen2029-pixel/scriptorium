@@ -63,6 +63,9 @@ CALIB_SHARDS = 16         # rotating golden subset per calibration round; 8
                           # floor and halt-below-bar stays a hard law
 DRIFT_FLOOR = SCORING_BAR  # calibration mean below the charter bar = halt
 HARNESS_CONCURRENCY = 6   # HM-7: each slot is a full runtime subprocess
+OUT_TOKENS = 6000         # per-card output budget; dense chunks that exhaust
+                          # it quarantine as json-hostile — --max-out-tokens
+                          # raises it for a --retry-quarantined rerun
 
 
 def _refcard_prompt() -> str:
@@ -110,9 +113,15 @@ class CardStore:
         self.cards_path = cards_dir / "cards.jsonl"
         self.quar_path = cards_dir / "quarantine.jsonl"
 
-    def done_keys(self) -> set[tuple[str, int]]:
+    def done_keys(self, *, include_quarantined: bool = True) -> set[tuple[str, int]]:
+        """Resume law: skip keys already present. include_quarantined=False is
+        the --retry-quarantined mode — quarantined keys become todo again; a
+        key later appearing in BOTH files means resolved-on-retry (cards.jsonl
+        wins; quarantine.jsonl is append-only history)."""
+        paths = ((self.cards_path, self.quar_path) if include_quarantined
+                 else (self.cards_path,))
         done: set[tuple[str, int]] = set()
-        for p in (self.cards_path, self.quar_path):
+        for p in paths:
             if not p.exists():
                 continue
             with open(p, encoding="utf-8") as f:
@@ -211,7 +220,9 @@ async def run_read(target: str | Path, *, usd_cap: float,
                    max_tokens: int | None = None,
                    batch_size: int = BATCH_SIZE, calib_every: int = CALIB_EVERY,
                    concurrency: int | None = None, base_url: str | None = None,
-                   provider: str = "api", embed: bool = True) -> dict[str, Any]:
+                   provider: str = "api", embed: bool = True,
+                   retry_quarantined: bool = False,
+                   out_tokens: int = OUT_TOKENS) -> dict[str, Any]:
     if concurrency is None:
         concurrency = BATCH_SIZE if provider == "api" else HARNESS_CONCURRENCY
     _mf, root = load_manifest(target)
@@ -247,7 +258,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
         rows, corpus_tokens, doc_meta = scan_tape(root)
         selected = select_rows(rows, projects, max_tokens)
         sel_tokens = sum(r.tokens for r in selected)
-        done = store.done_keys()
+        done = store.done_keys(include_quarantined=not retry_quarantined)
         todo = [r for r in selected if (r.doc_id, r.seq) not in done]
         say(f"  corpus {corpus_tokens:,} tok | selected {len(selected)} chunks "
             f"{sel_tokens:,} tok | done {len(selected) - len(todo)} | todo {len(todo)}")
@@ -293,7 +304,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
                 card, m = await client.chat(
                     system=system, user=header + "CHUNK:\n" + texts[(r.doc_id, r.seq)],
                     tail=f"\n\n[{r.doc_id[:10]}:{r.seq}]", mode="extract",
-                    max_tokens=6000, unit_id=f"card-{r.doc_id[:10]}-{r.seq}",
+                    max_tokens=out_tokens, unit_id=f"card-{r.doc_id[:10]}-{r.seq}",
                     out_model=CardV0)
                 return r, card, m
             except UnitQuarantined as e:
@@ -310,7 +321,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
                     card, _ = await client.chat(
                         system=system, user="CHUNK:\n" + spec["text"],
                         tail=f"\n\n[calib-{round_n}-{spec['id']}]", mode="extract",
-                        max_tokens=6000, unit_id=f"calib{round_n}-{spec['id']}",
+                        max_tokens=out_tokens, unit_id=f"calib{round_n}-{spec['id']}",
                         out_model=CardV0)
                     return compare_cards(CardV0.model_validate(spec["reference"]),
                                          card)["score"]

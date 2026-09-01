@@ -393,10 +393,11 @@ def test_make_client_api_path_returns_dsclient(monkeypatch):
     run(c.close())
 
 
-def test_hm2v2_persona_patch_mode(tmp_path):
-    """system_persona promotes the frozen prefix to the real system role: a
-    Cordis patch file lands beside the journal, the spec carries it, and tasks
-    shrink to discipline + payload + unit line (no duplicated prefix)."""
+def test_hm2v2_persona_patch_mode(tmp_path, monkeypatch):
+    """system_persona + explicit opt-in promotes the frozen prefix to the real
+    system role: a Cordis patch file lands beside the journal, the spec
+    carries it, and tasks shrink to discipline + payload + unit line."""
+    monkeypatch.setenv("SCRIPTORIUM_HARNESS_SYSTEM_ROLE", "patch")
     script = [{"content": '{"answer": "ok"}'}]
     calls, rts = [], []
     jp = tmp_path / "ds_calls.jsonl"
@@ -433,7 +434,8 @@ def test_hm2v2_persona_patch_mode(tmp_path):
     assert entry["system_role"] == "patch"
 
 
-def test_hm2v2_persona_pins_one_prefix_per_pass(tmp_path):
+def test_hm2v2_persona_pins_one_prefix_per_pass(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRIPTORIUM_HARNESS_SYSTEM_ROLE", "patch")
     calls, rts = [], []
     c = client(make_factory([], calls, rts),
                journal_path=tmp_path / "j.jsonl", system_persona="THE PREFIX")
@@ -448,8 +450,11 @@ def test_hm2v2_persona_pins_one_prefix_per_pass(tmp_path):
     assert calls == []                               # refused before any spend
 
 
-def test_hm2v2_intask_killswitch(tmp_path, monkeypatch):
-    monkeypatch.setenv("SCRIPTORIUM_HARNESS_INTASK", "1")
+def test_hm2v2_default_is_in_task_even_with_persona(tmp_path, monkeypatch):
+    """The modal/GLM path drops `system` silently (measured live) — so patch
+    mode must be OPT-IN; a passed system_persona without the env stays
+    in-task."""
+    monkeypatch.delenv("SCRIPTORIUM_HARNESS_SYSTEM_ROLE", raising=False)
     script = [{"content": '{"answer": "ok"}'}]
     calls, rts = [], []
     jp = tmp_path / "j.jsonl"
@@ -469,15 +474,17 @@ def test_hm2v2_intask_killswitch(tmp_path, monkeypatch):
     assert entry["system_role"] == "in-task"
 
 
-def test_hm2v2_braced_prefix_refused(tmp_path):
+def test_hm2v2_braced_prefix_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRIPTORIUM_HARNESS_SYSTEM_ROLE", "patch")
     with pytest.raises(DsError, match="strict"):
         client(make_factory([], [], []), journal_path=tmp_path / "j.jsonl",
                system_persona="prefix with {{template}} braces")
 
 
-def test_hm2v2_estimator_counts_persona(tmp_path):
+def test_hm2v2_estimator_counts_persona(tmp_path, monkeypatch):
     """HM-5: the persona reaches the model as system role every call — the
     estimated meter must count it or harness-$ undercuts api-$ comparability."""
+    monkeypatch.setenv("SCRIPTORIUM_HARNESS_SYSTEM_ROLE", "patch")
     script = [{"content": '{"answer": "ok"}'}]
     calls, rts = [], []
     persona = "P" * 400

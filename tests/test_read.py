@@ -138,6 +138,37 @@ def test_read_refuses_without_charter(stubs, monkeypatch):
         asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs))
 
 
+def test_retry_quarantined_rescues_key(stubs):
+    """--retry-quarantined: a quarantined key becomes todo again; on success
+    the key lives in BOTH files (cards win; quarantine.jsonl is history) and
+    cards.jsonl still has zero dupes."""
+    arch = frozen_mini(stubs)
+    asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    cards = read_cards(arch)
+    victim = (cards[0]["doc_id"], cards[0]["seq"])
+
+    # simulate history: drop the victim's card, add a quarantine row for it
+    cards_p = arch / "catalog" / "cards" / "cards.jsonl"
+    quar_p = arch / "catalog" / "cards" / "quarantine.jsonl"
+    keep = [json.dumps(c) for c in cards[1:]]
+    cards_p.write_text("\n".join(keep) + "\n", "utf-8")
+    quar_p.write_text(json.dumps({"doc_id": victim[0], "seq": victim[1],
+                                  "reason": "worker_output_invalid",
+                                  "run_id": "old"}) + "\n", "utf-8")
+
+    # without the flag: quarantined counts as done — nothing to do
+    r1 = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    assert r1.get("cards", 0) == 0
+
+    # with the flag: the key is re-read and lands as a card
+    r2 = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4,
+                              retry_quarantined=True))
+    assert r2["cards"] == 1
+    keys = [(c["doc_id"], c["seq"]) for c in read_cards(arch)]
+    assert len(keys) == len(set(keys)) == len(cards)
+    assert victim in keys
+
+
 def test_read_multi_driver_lease_partition(stubs, monkeypatch):
     """A2A chunk leases: a chunk claimed by a live co-driver is skipped without
     writing anything; the skip is reported honestly; a later resume (the other
