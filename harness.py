@@ -11,7 +11,9 @@ _run_state/HARNESS_MODE_DESIGN.md. Mirror of ds.py's PS-1..PS-10:
 - HM-1  one harness, explicit home (never ~/.dsh): dsh_home defaults to
         _local/dsh-home; worker provider/model default to the operator's
         session model; credentials come from the parent environment only.
-- HM-2  the contract rides in the task: fresh single-turn session per attempt,
+- HM-2  the contract rides in the task: fresh single-turn session per attempt
+        (GLOBALLY fresh — ids carry a per-client nonce because the session
+        store persists across runs and re-running an on-disk id errors),
         frozen system prefix at the head of every task behind an explicit
         boundary marker, payload last, unit id + output budget line at the tail.
         v2 (system_persona): a single-prefix pass (P2) promotes the frozen
@@ -47,6 +49,7 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -347,6 +350,11 @@ class HarnessClient:
         self.meter = Meter(prices=prov["price_sheet_usd_per_mtok"])
         self.model_fp: str | None = self.model
         self.journal_path = journal_path
+        # HM-2: sessions must be GLOBALLY fresh, not process-fresh — the
+        # session store persists across runs, and a fresh runtime asked to
+        # run an on-disk session id errors instantly (measured live: a rerun
+        # in the same dsh-home failed every call with bare finish=error).
+        self._nonce = uuid.uuid4().hex[:8]
         self._slots = [_Slot(dict(spec), self._factory)
                        for _ in range(max(1, concurrency))]
         self._free: asyncio.Queue[_Slot] | None = None
@@ -401,7 +409,8 @@ class HarnessClient:
                 f"pass {self.pass_name}: estimated meter ${self.meter.usd():.4f} "
                 f"crossed usd_cap ${self.usd_cap:.2f} mid-flight — halting (HM-6)")
         self._calls += 1
-        session_id = f"{self.pass_name}-{unit_id}-a{attempt}-{self._calls}"
+        session_id = (f"{self.pass_name}-{unit_id}-a{attempt}"
+                      f"-{self._nonce}-{self._calls}")
         slot = await self._acquire()
         t0 = time.monotonic()
         try:

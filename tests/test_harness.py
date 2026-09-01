@@ -356,6 +356,27 @@ def test_hm1_sdk_missing_is_typed():
     assert "not installed" in str(run(go()))
 
 
+def test_hm2_session_ids_globally_fresh_across_clients():
+    """The session store persists across runs; two clients (two processes,
+    two reruns) must never mint the same session id for the same unit —
+    an on-disk id rerun errors instantly (measured live)."""
+    ids = []
+    for _ in range(2):
+        script = [{"content": '{"answer": "ok"}'}]
+        calls, rts = [], []
+        c = client(make_factory(script, calls, rts))
+
+        async def go(c=c, calls=calls):
+            await c.chat(system="S", user="U", mode="extract",
+                         unit_id="u1", out_model=TinyOut)
+            await c.close()
+            return calls[0]["session_id"]
+
+        ids.append(run(go()))
+    assert ids[0] != ids[1]
+    assert all(i.startswith("test-pass-u1-a0-") for i in ids)
+
+
 def test_make_client_dispatch():
     with pytest.raises(DsError, match="unknown provider"):
         make_client("p", 1.0, provider="nope")
