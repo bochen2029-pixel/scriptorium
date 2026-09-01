@@ -70,7 +70,10 @@ $1.22, OUTREACH $0.09, smokes). Balance ~$6.8.
   charter FROZEN, 125 artifacts, root 209ed2439de94905ebe99f7da60b2ffd.
   $0.913, 27 min. (Run 1 failed honestly for $1.64 — reasoning exhausted
   max_tokens -> empty content; fixed with the adaptive ladder in ds.py.)
-- **S2 · First reading — code green; live slice green; RUNG GATE PARTIAL.**
+- **S2 · First reading — code green; live on three catalogs; GATE ITEM 2
+  (two real collections) DONE.** Fence-checked spans: DONE (and now derived,
+  not just measured). Remaining for the full S2 claim: the whole-corpus read
+  of corpus #1 (blocked on the top-up).
 
 ## S2 detail (the live section)
 
@@ -147,6 +150,38 @@ was corrected to the operator).
 Session spend so far: **$9.19** (S1 $1.64 + $0.91, P2 slice $6.63, smokes).
 DeepSeek balance ~ $8.1.
 
+## Collection #2 — DONE end-to-end (S2 ship-gate item 2), 2026-09-01
+
+`C:\_DAD\scriptorium-repo-archive` — **the published scriptorium repo reading
+itself** (local-only material excluded: survey docs, `_local`, `_testdata`,
+secrets, the amanuensis subprojects). Every rung on the api lane, one sitting,
+**$0.17 total**:
+
+| stage | result |
+|---|---|
+| intake | 56 docs / 57 text records / 110,869 tokens; 59,470 excluded; 0 quarantined; reconciliation 99.99% (5 files appeared mid-run: 4 git objects + a script I wrote) |
+| discover | 42 golden shards (11 defective), scoring **0.704 / 0.705**, gap 0.0009 vs tolerance 0.05, paired n=41 SE=0.0208 \|t\|=0.04 → STABLE; $0.103 |
+| freeze | 49 artifacts fingerprinted, charter root **cddeb55f09ab8380376e1e7bf1aeced5** |
+| read | **56 cards, 1 quarantined**, 56 vectors, calibration 0.676 (bar 0.55, baseline 0.705), prefix-hit efficiency 98%, total hit share 63%, $0.068 in 271s |
+| fence | 191 quotes, **verified 87.43%**, unlocated 12.57%, exact-from-model 0.52%; derived spans located **167/191 = 87.43%** (96 find + 71 whitespace) |
+
+Two independent corpora now agree closely on the fence (87.19% on v2-OUTREACH,
+87.43% here) — that ~87% verified / ~13% paraphrase-as-quote looks like a
+property of the model + rubric, not of one archive. The first two discover
+attempts here were REFUSED by the S1 falsifier (see RATIFIED 9); the third
+passed on its own merits under the corrected rule.
+
+Worth noting: the induced ontology of this repo's own source came back as
+"span-verified truth / verbatim fidelity", "determinism / frozen
+reproducibility", "falsifier-gated rungs", "measured, never assumed", "the
+negatives are forever" — the organ read its own constitution off its own code.
+It also shows exactly why S3 exists: `Tape` (9) and `the Tape` (8) are
+separate entities, `scriptorium` (15) and `SCRIPTORIUM` (5) likewise — alias
+fragmentation is P3's registry problem, visible here in miniature.
+
+Inspect it with: `scriptorium.cmd query C:\_DAD\scriptorium-repo-archive`
+(summary) or `... query <root> "fence AND spans"` (hits with verbatim).
+
 ## Session log 2026-09-01 (Claude Code) — what changed, in one place
 
 Suite went 113 → **133 pytest + ruff clean**; every item below is committed and
@@ -176,12 +211,36 @@ silently a corpus-SIZE test that refused small archives for noise. Now
 `max(0.05, 2 x paired SE)`; both frozen charters keep their verdicts, a
 genuinely unstable run (|t|=2.25) is still refused.
 
+**The catalog became inspectable.** New `query` module + subcommand (no LLM,
+no API): `query <root>` prints a catalog summary (counts, quotes/claims per
+card, project/year/topic/entity distributions, quarantine reasons, and loud
+warnings if one catalog mixes reader models or charter roots); `query <root>
+"<fts5>"` searches the indexed chunks and shows hits in TWO REGISTERS —
+VERBATIM (only quotes whose spans code could derive from the Tape) and
+READING (the model's claims/topics/entities, labelled as such). An unlocated
+quote is withheld and counted, never rendered as verbatim, so the window
+cannot launder a fabrication. Terminal control bytes from archived console
+captures are neutered before display.
+
+**Two latent defects in the api seam (`ds.py`), both fail-proven against the
+old code:** a transport-error retry slept INSIDE the AIMD gate (a network
+wobble would park every concurrency slot on sleeping calls), and a first
+response missing `model` pinned the PS-9 fingerprint to `""` so the next
+honest answer raised ModelChanged and halted a paid pass. Both matter for the
+long full-corpus read.
+
+**`scriptorium.lock` charters roster:** the single `charter` block was
+last-writer-wins across archives; collection #2's freeze would have
+overwritten corpus #1's record. Now one row per archive (v1/v2 migrated from
+their own charter.locks, which remain the truth).
+
 **Smaller things:** `--retry-quarantined` + `--max-out-tokens` (the parked
 observations), `--concurrency`, charter baseline printed from charter.yaml,
 CALIB_SHARDS 8→16, provider failure messages surfaced into the journal
 (`finish_failure`) with ladder backoff, honest driver identity on the bus,
-README brought to 2026-09-01 with a dual-mode section, collection #2 tape
-built (56 files / 110,869 tokens, 99.99% reconciled).
+README brought to 2026-09-01 with a dual-mode section, `_local/README.md`
+documenting the working directory (incl. the DSH session store as a forensic
+asset — two of this session's findings came from reading it).
 
 ## Dual mode round 5-6 (2026-09-01, Claude Code session) — A2A v2 built; persona hardened by live failure
 
@@ -290,6 +349,23 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
   (measured live: schema-less GLM answers parsed then scored 0.000). Fine
   under calibration's protection; if a future rubric wants hard schema
   enforcement, make required fields required in a CardV1.
+- Defect-shard mechanics, verified by reading + measurement (2026-09-01):
+  defects mutate the TEXT and the reference is authored FROM the mutated
+  text, so honest re-reads score HIGH on defect shards (measured 0.70-0.89
+  across all four scorings — that is the design: they catch a
+  prior-following model, e.g. one that writes the real entity name where
+  the text says "Zorbell"). Two soft observations: (a) nothing yet
+  self-tests the scorer's discrimination (score a card from the ORIGINAL
+  unmutated text against the mutated reference — should drop; ~12 extra
+  calls at discover time); (b) `defects_n` is absolute (12), so small
+  golden pools get a high defect share (collection #2: 11/42 = 26% vs
+  corpus #1's 10%) — consider proportional (10%) when touching discover.
+- Scoring means POOL clean + defect shards. Since defect shards score high
+  when the model is honest, this slightly raises means and (on collection
+  #2 attempt 2) hid a bit of clean-shard instability (clean-only gap 0.0623
+  vs pooled 0.0516). Not changed — cross-charter comparability of the
+  recorded means wins for now; revisit if a charter ever passes/fails
+  within noise of the bar.
 - Embedding truncation: vectors embed chunk[:8000] chars (sidecar ctx
   safety) — document/decide before the resident-skeleton stage cares.
 - Parked from earlier (still live): Baidu Unlimited-OCR S2+ eval plan ·
@@ -319,10 +395,7 @@ question is CLOSED (round-9 verdict above; the watcher fork in older notes is
 obsolete — every calibration attempt was refused checkpoint-clean and the
 evidence is in HARNESS_MODE_DESIGN.md). Then:
 
-1. Check collection #2 (`_local/collection2_chain.log`): if the chain
-   finished, its charter/read/fence numbers belong in this file and the S2
-   gate's "second collection" item is DONE. If freeze refused again under the
-   noise-aware rule, that is a REAL instability — diagnose, don't loosen.
+1. ~~Collection #2~~ DONE (section above; numbers recorded).
 2. If the operator topped up the DeepSeek balance: launch the full v2 api
    read (command in TL;DR; CALIB_SHARDS defaults 16 now). When it finishes:
    `scriptorium.cmd fence C:\_DAD\projects-mirror-archive-v2 --derive` for
