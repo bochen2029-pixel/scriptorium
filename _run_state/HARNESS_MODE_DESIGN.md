@@ -51,6 +51,15 @@ Total measured cost of this entire qualification exercise: **$0** cash (Modal qu
 about five minutes of wall-clock per attempt — because the halt fires at batch 0, before any
 card is written.
 
+### Note for whoever runs `_local/harness_real_e2e_smoke.py` next
+
+It now **halts at calibration 0.500 < 0.55** where round 4 passed at 0.574. That is not a
+regression — the mock-wire smoke still produces 12/12 cards, so the transport, the text index,
+the gate and the A2A layer are all intact. It is the round-9 verdict reproducing itself on a
+completely different (toy) corpus with different, stub-authored goldens: GLM lands at ~0.50
+again, right where its own self-consistency sits. Two independent corpora, same answer. The
+halt is the gate doing its job; expect it until a stronger worker model is wired.
+
 ## Round-8: the goldens are MODEL-SPECIFIC — a cross-model lane needs its own charter
 
 With the contract actually reaching the model (in-task), the slice scored **0.327** — a real
