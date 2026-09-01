@@ -79,9 +79,12 @@ scriptorium.cmd intake   D:\my-archive     :: builds/extends the Tape under that
 scriptorium.cmd status   D:\my-archive --verify
 scriptorium.cmd discover D:\my-archive     :: P1: propose charter + goldens (API, capped)
 scriptorium.cmd freeze   D:\my-archive     :: verify the S1 falsifier, fingerprint charter
+scriptorium.cmd read     D:\my-archive --cap 5 --dry-run  :: preflight, spends nothing
 scriptorium.cmd read     D:\my-archive --cap 5   :: P2: cards under the frozen charter
 scriptorium.cmd fence    D:\my-archive --derive  :: span fence + code-located spans
-scriptorium.cmd query    D:\my-archive "quotes AND fence"   :: look at what it read
+scriptorium.cmd query    D:\my-archive           :: summary of what the reading found
+scriptorium.cmd query    D:\my-archive "quotes AND fence"   :: hits, with verbatim
+scriptorium.cmd vectors  D:\my-archive           :: backfill any missing embeddings
 ```
 
 `read` is resumable and kill-safe (rerun continues with zero duplicate cards
