@@ -215,7 +215,9 @@ def main(argv: list[str] | None = None) -> int:
                         ("freeze", "verify the S1 falsifier, fingerprint the charter"),
                         ("read", "P2: the first reading — cards under the frozen charter"),
                         ("fence", "span fence over the catalog (deterministic, "
-                                  "no LLM); --derive writes code-located spans")):
+                                  "no LLM); --derive writes code-located spans"),
+                        ("query", "read-only search over a finished catalog "
+                                  "(FTS + fence-verified quotes; no LLM)")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("target", help="archive root dir or manifest path")
         if name == "intake" or name == "resume":
@@ -258,6 +260,12 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--max-out-tokens", type=int, default=None,
                            help="per-card output budget (default 6000; raise "
                                 "for dense chunks that quarantined)")
+        if name == "query":
+            p.add_argument("terms", help="FTS5 match expression, e.g. "
+                                         '"fence AND spans"')
+            p.add_argument("--limit", type=int, default=5)
+            p.add_argument("--json", action="store_true",
+                           help="machine-readable output")
         if name == "fence":
             p.add_argument("--derive", action="store_true",
                            help="also write catalog/cards/spans.jsonl — "
@@ -300,6 +308,20 @@ def main(argv: list[str] | None = None) -> int:
             embed=not args.no_embed, concurrency=args.concurrency,
             retry_quarantined=args.retry_quarantined,
             out_tokens=args.max_out_tokens or OUT_TOKENS))
+        return 0
+    if args.cmd == "query":
+        import json as _json
+
+        from manifest import load_manifest
+        from query import QueryError, render, search
+        _mf, root = load_manifest(args.target)
+        try:
+            rep = search(root, args.terms, limit=args.limit)
+        except QueryError as e:
+            print(f"query refused: {e}")
+            return 2
+        print(_json.dumps(rep, ensure_ascii=False, indent=1) if args.json
+              else render(rep))
         return 0
     if args.cmd == "fence":
         import json as _json
