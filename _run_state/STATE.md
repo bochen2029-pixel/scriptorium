@@ -292,6 +292,20 @@ last-writer-wins across archives; collection #2's freeze would have
 overwritten corpus #1's record. Now one row per archive (v1/v2 migrated from
 their own charter.locks, which remain the truth).
 
+**A false claim in the code, fixed.** `read.py` told the operator that a
+sidecar-down run's vectors were "deferred to a rerun" — but a rerun skips
+already-carded keys by the resume law, so those chunks could never gain
+vectors by any existing path. The message now says what actually happens and
+`scriptorium.cmd vectors <archive>` is the real path (local :8092 only, no
+API, idempotent, reports tape-unreadable chunks instead of skipping them).
+The test proves the gap was real: after clearing vectors a full rerun leaves
+zero, and only the backfill restores them.
+
+**`read --dry-run`** preflights an expensive run — charter verified, slice
+selected, budget gated (worst case AND realistic), tape proven readable by
+sampling real chunks, embed sidecar probed — with zero model calls and zero
+cards written.
+
 **Smaller things:** `--retry-quarantined` + `--max-out-tokens` (the parked
 observations), `--concurrency`, charter baseline printed from charter.yaml,
 CALIB_SHARDS 8→16, provider failure messages surfaced into the journal
