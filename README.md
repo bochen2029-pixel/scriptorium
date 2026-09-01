@@ -53,12 +53,16 @@ research-group memory, small-org institutional knowledge — anything where the
 corpus outgrew every context window and every human reader, but still deserves
 a catalog with receipts.
 
-**Honest status (2026-07-31): rung S0 green; rung S1 in flight.** `plan`,
-`intake`, `status`, `resume` (S0) and `discover`, `freeze` (S1) are real and
-tested; `read`/`map`/`reread`/`synthesize`/`certify`/`run`/`ask` print their
-rung and refuse. P0 uses no API; P1+ go through the one provider seam
-([ds.py](ds.py), laws PS-1..PS-10, DeepSeek V4 Flash) with a hard `usd_cap`
-per pass. `DEEPSEEK_API_KEY` lives in `.env` (gitignored).
+**Honest status (2026-09-01): rungs S0+S1 green; S2 code-green and
+live-proven on two tapes.** `plan`, `intake`, `status`, `resume` (S0),
+`discover`, `freeze` (S1), `read` + the span fence `spancheck.py` (S2) are
+real and tested; `map`/`reread`/`synthesize`/`certify`/`run`/`ask` print
+their rung and refuse. Measured on the operator's corpus #1: a 1.75B-token
+raw tape and its 172M-token extracted v2 (10.2x); first live fence run caught
+28.5% paraphrase-as-quote on raw v1, 12.8% on extracted v2. P0 uses no API;
+P1+ go through the one provider seam ([ds.py](ds.py), laws PS-1..PS-10,
+DeepSeek V4 Flash) with a hard `usd_cap` per pass — or through **dual mode**
+(below). `DEEPSEEK_API_KEY` lives in `.env` (gitignored).
 Spec: [`SCRIPTORIUM_ORGAN_SPEC_proposed_by_fable5_2026-07-31.md`](SCRIPTORIUM_ORGAN_SPEC_proposed_by_fable5_2026-07-31.md).
 Live build state: [`_run_state/STATE.md`](_run_state/STATE.md).
 
@@ -113,6 +117,31 @@ audio never leave the box; text rents the reading.* OCR is local
 [`prompts/ocr_contract_v0.txt`](prompts/ocr_contract_v0.txt)); ASR is local
 (earshot/whisper.cpp); embeddings (`:8092`) are an S2 seam, stubbed.
 
+## Dual mode: API lane and harness lane
+
+Every LLM pass can run through either of two lanes, same rigor in both
+(frozen charter fingerprint verify, calibration-on-goldens with
+halt-below-bar, deterministic span fence, typed quarantines, hard caps):
+
+- **api** (default): raw DeepSeek calls through `ds.py`, the ONE API seam.
+- **harness** (`--provider harness`): every unit call is executed by a
+  **DeepSeek Harness worker agent** — a subagent of the operator's own
+  session model — through the DSH Python SDK, one runtime subprocess per
+  concurrency slot ([harness.py](harness.py), laws HM-1..HM-10 mirroring
+  PS-1..PS-10). Usage is estimated (chars/4) and priced at the same lock
+  sheet so `$` stays comparable across lanes. The frozen contract rides
+  in the task by default (measured: some provider paths silently drop the
+  `system` role — the in-task bundle is provider-proof).
+
+An opt-in agent-to-agent layer (`SCRIPTORIUM_A2A=1`, [a2a.py](a2a.py))
+wraps passes with bus coordination on a local Intercom instance: pass
+leases (two drivers can't double-run a pass), per-chunk leases (two
+drivers CAN co-work one catalog without dupes), run findings, and one
+blake2b artifact pin of `cards.jsonl` per run as an attestation receipt.
+Coordination is sugar, never a dependency: any bus failure degrades to a
+no-op and the pass runs on. Design + measured evidence:
+[`_run_state/HARNESS_MODE_DESIGN.md`](_run_state/HARNESS_MODE_DESIGN.md).
+
 ## What intake leaves on disk (spec section 3)
 
 ```
@@ -141,7 +170,9 @@ character offsets into the NFC canonical `text` records.
   stability) + `freeze` (refuses unless the falsifier passed; fingerprints
   everything). Ratification currently by operator delegation
   (_run_state/RATIFIED.md).
-- **S2 · First reading** — `read` (cards, calibration, budget meter, cache law).
+- **S2 · First reading** — `read` (cards, calibration halt, budget meter,
+  cache law, dual provider lanes) + `spancheck.py` (the deterministic fence).
+  Code green; live-proven on two tapes; full-corpus read pending.
 - **S3 · The circle** — `map` ⇄ `reread` to convergence.
 - **S4 · Codex + certificate** — `synthesize` + `certify`; the certificate is
   the product.
@@ -154,6 +185,11 @@ uv sync --all-extras          :: pydantic v2 + httpx + PyMuPDF (+ tiktoken)
 uv run pytest tests/ -q       :: green = the only definition of green
 uv run ruff check .
 ```
+
+The optional `harness` extra (`deepseek-harness-sdk`) powers `--provider
+harness`; the default lane never imports it. Note: the PyPI runtime wheels
+are mac/linux only today — on Windows, install the SDK editable from a DSH
+checkout.
 
 Windows-native: Python ≥3.12 via uv, `.cmd` launcher, UTF-8 consoles, no WSL,
 no Docker, no symlinks. Provider seam (`ds.py`, DeepSeek V4 Flash, laws
