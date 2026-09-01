@@ -261,8 +261,9 @@ def main(argv: list[str] | None = None) -> int:
                            help="per-card output budget (default 6000; raise "
                                 "for dense chunks that quarantined)")
         if name == "query":
-            p.add_argument("terms", help="FTS5 match expression, e.g. "
-                                         '"fence AND spans"')
+            p.add_argument("terms", nargs="?", default=None,
+                           help="FTS5 match expression, e.g. "
+                                '"fence AND spans". Omit for a catalog summary.')
             p.add_argument("--limit", type=int, default=5)
             p.add_argument("--json", action="store_true",
                            help="machine-readable output")
@@ -313,15 +314,20 @@ def main(argv: list[str] | None = None) -> int:
         import json as _json
 
         from manifest import load_manifest
-        from query import QueryError, render, search
+        from query import QueryError, render, render_summary, search, summary
         _mf, root = load_manifest(args.target)
         try:
-            rep = search(root, args.terms, limit=args.limit)
+            if args.terms is None:          # no terms = "what is in here?"
+                rep, text = summary(root), None
+                text = render_summary(rep)
+            else:
+                rep = search(root, args.terms, limit=args.limit)
+                text = render(rep)
         except QueryError as e:
             print(f"query refused: {e}")
             return 2
         print(_json.dumps(rep, ensure_ascii=False, indent=1) if args.json
-              else render(rep))
+              else text)
         return 0
     if args.cmd == "fence":
         import json as _json

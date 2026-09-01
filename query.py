@@ -130,6 +130,142 @@ def search(archive_root: str | Path, terms: str, limit: int = 5,
     return {"terms": terms, "hits": hits, "n": len(hits)}
 
 
+def summary(archive_root: str | Path, top: int = 12) -> dict[str, Any]:
+    """What is actually in this catalog — deterministic aggregation over
+    cards.jsonl + quarantine.jsonl + index.sqlite. No LLM, no Tape pass.
+    Answers the question a 13,000-card catalog otherwise can't: what did the
+    reading find, where is it thin, and what refused to be read."""
+    root = Path(archive_root)
+    cards_dir = root / "catalog" / "cards"
+    cards_path = cards_dir / "cards.jsonl"
+    if not cards_path.exists():
+        raise QueryError(f"no cards at {cards_path} — run `read` first")
+
+    from collections import Counter
+    projects: Counter[str] = Counter()
+    years: Counter[int] = Counter()
+    topics: Counter[str] = Counter()
+    entities: Counter[str] = Counter()
+    kinds: Counter[str] = Counter()
+    models: Counter[str] = Counter()
+    charter_roots: Counter[str] = Counter()
+    n_cards = n_quotes = n_claims = 0
+    keys: set[tuple[str, int]] = set()
+    with open(cards_path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                row = json.loads(line)
+                card = row["card"]
+            except (json.JSONDecodeError, KeyError):
+                continue
+            key = (row.get("doc_id"), row.get("seq"))
+            if key in keys:
+                continue                      # resume/rerun overlap: count once
+            keys.add(key)
+            n_cards += 1
+            n_quotes += len(card.get("quotes", []))
+            n_claims += len(card.get("claims", []))
+            for t in card.get("topics", []):
+                topics[_display(t)] += 1
+            for e in card.get("entities", []):
+                if e.get("name"):
+                    entities[_display(e["name"])] += 1
+                    kinds[e.get("kind") or "other"] += 1
+            fp = row.get("fp") or {}
+            if fp.get("model"):
+                models[fp["model"]] += 1
+            if fp.get("charter_root"):
+                charter_roots[fp["charter_root"]] += 1
+
+    quar: Counter[str] = Counter()
+    n_quar = 0
+    quar_path = cards_dir / "quarantine.jsonl"
+    if quar_path.exists():
+        with open(quar_path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    reason = json.loads(line).get("reason", "?")
+                except json.JSONDecodeError:
+                    continue
+                n_quar += 1
+                quar[str(reason).split(":")[0][:60]] += 1
+
+    index: dict[str, int | None] = {}
+    db_path = root / "catalog" / "index.sqlite"
+    if db_path.exists():
+        db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            for name, q in (("chunks", "SELECT COUNT(*) FROM chunks"),
+                            ("fts", "SELECT COUNT(*) FROM chunks_fts"),
+                            ("vectors", "SELECT COUNT(*) FROM vectors")):
+                try:
+                    index[name] = db.execute(q).fetchone()[0]
+                except sqlite3.Error:
+                    index[name] = None      # absent table: unknown, NOT zero —
+                                            # a sentinel must never reach a
+                                            # derived number below
+            for doc_id, seq in keys:
+                got = db.execute("SELECT project, year FROM chunks "
+                                 "WHERE doc_id=? AND seq=?",
+                                 (doc_id, seq)).fetchone()
+                if got:
+                    projects[got[0] or "?"] += 1
+                    years[got[1] or 0] += 1
+        finally:
+            db.close()
+
+    return {
+        "archive": str(root), "cards": n_cards, "quarantined": n_quar,
+        "quotes": n_quotes, "claims": n_claims,
+        "quotes_per_card": round(n_quotes / n_cards, 2) if n_cards else 0,
+        "claims_per_card": round(n_claims / n_cards, 2) if n_cards else 0,
+        "index": index,
+        "vectors_missing": (max(0, n_cards - index["vectors"])
+                            if isinstance(index.get("vectors"), int) else None),
+        "models": dict(models), "charter_roots": dict(charter_roots),
+        "projects": projects.most_common(top),
+        "years": sorted(years.items()),
+        "topics": topics.most_common(top),
+        "entities": entities.most_common(top),
+        "entity_kinds": dict(kinds),
+        "quarantine_reasons": quar.most_common(top),
+    }
+
+
+def render_summary(s: dict[str, Any]) -> str:
+    out = [f'catalog: {s["archive"]}',
+           f'  {s["cards"]} cards, {s["quarantined"]} quarantined | '
+           f'{s["quotes"]} quotes ({s["quotes_per_card"]}/card), '
+           f'{s["claims"]} claims ({s["claims_per_card"]}/card)']
+    if s["index"]:
+        shown = ", ".join(f'{"?" if v is None else v} {k}'
+                          for k, v in s["index"].items())
+        out.append(f"  index: {shown}"
+                   + (f' ({s["vectors_missing"]} cards lack a vector — '
+                      f'backfillable)' if s["vectors_missing"] else ""))
+    if len(s["models"]) > 1:
+        out.append(f'  WARNING mixed reader models: {s["models"]}')
+    elif s["models"]:
+        out.append(f'  read by: {", ".join(s["models"])}')
+    if len(s["charter_roots"]) > 1:
+        out.append(f'  WARNING mixed charter roots: {list(s["charter_roots"])}')
+
+    def row(label, pairs):
+        if pairs:
+            out.append(f"  {label}: " + ", ".join(f"{k} ({n})" for k, n in pairs))
+
+    row("projects", s["projects"])
+    row("years", [(str(y), n) for y, n in s["years"]])
+    row("topics", s["topics"])
+    row("entities", s["entities"])
+    if s["entity_kinds"]:
+        out.append("  entity kinds: " + ", ".join(
+            f"{k} ({n})" for k, n in sorted(s["entity_kinds"].items(),
+                                            key=lambda kv: -kv[1])))
+    row("quarantine reasons", s["quarantine_reasons"])
+    return "\n".join(out)
+
+
 def render(report: dict[str, Any]) -> str:
     """Plain-text, two registers kept visibly apart."""
     out = [f'query: {report["terms"]}  ({report["n"]} hit'

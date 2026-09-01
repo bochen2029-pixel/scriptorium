@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 
 from conftest import fresh_dir
-from query import QueryError, render, search
+from query import QueryError, render, render_summary, search, summary
 from tape import Tape
 
 TEXT = ("The negatives are forever. The fence certifies what the readers "
@@ -125,3 +125,48 @@ def test_no_match_is_an_empty_report_not_an_error():
     rep = search(arch, "zzzznotpresent")
     assert rep["n"] == 0 and rep["hits"] == []
     assert "no chunk in this catalog matches" in render(rep)
+
+
+def test_summary_counts_dedupes_and_flags_mixed_reads():
+    """The aggregate view: a resumed catalog can carry a key twice — count it
+    once — and a catalog read by two models or under two charters must say so."""
+    arch = fresh_dir("query-summary")
+    make_catalog(arch, quotes=[{"text": "The negatives are forever.",
+                                "start": 0, "end": 26}])
+    cards_p = arch / "catalog" / "cards" / "cards.jsonl"
+    row = json.loads(cards_p.read_text("utf-8").splitlines()[0])
+    row["fp"] = {"model": "deepseek-v4-flash", "charter_root": "root-a"}
+    other = json.loads(json.dumps(row))
+    other["seq"] = 1
+    other["fp"] = {"model": "some-other-model", "charter_root": "root-b"}
+    with open(cards_p, "w", encoding="utf-8") as f:
+        for r in (row, row, other):                  # row twice = resume overlap
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    (arch / "catalog" / "cards" / "quarantine.jsonl").write_text(
+        json.dumps({"doc_id": DOC, "seq": 9,
+                    "reason": "worker_output_invalid: boom"}) + "\n", "utf-8")
+
+    s = summary(arch)
+    assert s["cards"] == 2 and s["quarantined"] == 1     # duplicate counted once
+    assert s["quotes"] == 2 and s["claims"] == 2
+    assert s["quotes_per_card"] == 1.0
+    assert s["topics"] == [("fence", 2)]
+    assert s["entity_kinds"] == {"other": 2}
+    assert s["quarantine_reasons"] == [("worker_output_invalid", 1)]
+    # an absent vectors table is UNKNOWN, never 0 — no sentinel may reach a
+    # derived number (a -1 once made "2 cards" report 3 missing vectors)
+    assert s["index"]["chunks"] == 1 and s["index"]["vectors"] is None
+    assert s["vectors_missing"] is None
+
+    out = render_summary(s)
+    assert "WARNING mixed reader models" in out
+    assert "WARNING mixed charter roots" in out
+    assert "? vectors" in out and "lack a vector" not in out
+
+
+def test_summary_refuses_without_cards():
+    arch = fresh_dir("query-summary-empty")
+    make_catalog(arch, quotes=[])
+    (arch / "catalog" / "cards" / "cards.jsonl").unlink()
+    with pytest.raises(QueryError, match="no cards"):
+        summary(arch)
