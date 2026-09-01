@@ -168,6 +168,35 @@ def write_persona_patch(persona: str, path: Path) -> Path:
     return path
 
 
+def _finish_failure(events: Any) -> str:
+    """Best-effort: the runtime's failure message behind an `error` finish
+    (e.g. Modal `429 Plan credits cannot be applied...`) — journaled and
+    attached to the soft error, so a rate window is visible in ds_calls.jsonl
+    instead of requiring session-store forensics."""
+    try:
+        for ev in reversed(list(events or [])):
+            if not isinstance(ev, dict):
+                continue
+            data = ev.get("data")
+            if not isinstance(data, dict):
+                continue
+            candidates = []
+            if ev.get("type") == "turn/end":
+                candidates.append(data.get("reason"))
+            chunk = data.get("chunk")
+            if (ev.get("type") == "assistant/chunk" and isinstance(chunk, dict)
+                    and chunk.get("type") == "finish"):
+                candidates.append(chunk.get("reason"))
+            for reason in candidates:
+                if isinstance(reason, dict):
+                    f = reason.get("failure")
+                    if isinstance(f, dict) and f.get("message"):
+                        return str(f["message"])[:300]
+    except Exception:  # noqa: BLE001 — diagnostics must never fail a call
+        pass
+    return ""
+
+
 class _Slot:
     """HM-7: one runtime subprocess, owned exclusively while a call runs."""
 
@@ -177,8 +206,9 @@ class _Slot:
         self.factory = factory
         self._rt: Any = None
 
-    async def run_task(self, task: str, session_id: str) -> tuple[str, str | None]:
-        def sync() -> tuple[str, str | None]:
+    async def run_task(self, task: str,
+                       session_id: str) -> tuple[str, str | None, str]:
+        def sync() -> tuple[str, str | None, str]:
             if self._rt is None:
                 try:
                     rt = self.factory(self.spec)
@@ -192,7 +222,8 @@ class _Slot:
                         f"runtime boot failed: {type(e).__name__}: {e}") from e
             rr = self._rt.run(task, session_id=session_id)
             return (getattr(rr, "final_response", "") or "",
-                    getattr(rr, "finish_reason", None))
+                    getattr(rr, "finish_reason", None),
+                    _finish_failure(getattr(rr, "events", None)))
 
         return await asyncio.to_thread(sync)
 
@@ -257,7 +288,8 @@ class HarnessClient:
                  profile: str = "sdk", dsh_bin: str | None = None,
                  runtime_factory: Callable[[dict[str, Any]], Any] | None = None,
                  chars_per_token: int = CHARS_PER_TOKEN,
-                 system_persona: str | None = None):
+                 system_persona: str | None = None,
+                 backoff: tuple[float, float] = (5.0, 15.0)):
         prov = load_lock()["provider"]
         self.pass_name = pass_name
         self.usd_cap = usd_cap
@@ -308,6 +340,7 @@ class HarnessClient:
             self.system_role = "patch"
             self._persona_chars = len(system_persona) + len(PERSONA_END)
         self._spec = spec
+        self.backoff = backoff
         self._factory = runtime_factory or _default_factory
         self.home_note = (_ensure_worker_home(home)
                           if runtime_factory is None else "test-factory")
@@ -373,7 +406,7 @@ class HarnessClient:
         t0 = time.monotonic()
         try:
             try:
-                content, finish = await slot.run_task(task, session_id)
+                content, finish, failure = await slot.run_task(task, session_id)
             except HarnessUnavailable:
                 raise
             except Exception as e:  # runtime/process failures are soft (HM-4)
@@ -383,7 +416,7 @@ class HarnessClient:
         ms = int((time.monotonic() - t0) * 1000)
         usage = self._estimate_usage(task, content)
         self.meter.record(usage)
-        self._journal({
+        entry = {
             "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "pass": self.pass_name, "unit": unit_id, "mode": mode,
             "attempt": attempt, "model": self.model, "ms": ms,
@@ -391,9 +424,13 @@ class HarnessClient:
             "session_id": session_id, "finish_reason": finish,
             "system_role": self.system_role,
             "task_chars": len(task), "response_chars": len(content),
-        })
+        }
+        if failure:
+            entry["finish_failure"] = failure
+        self._journal(entry)
         if finish not in (None, "completed"):
-            raise _Soft(f"finish_reason={finish}")
+            raise _Soft(f"finish_reason={finish}"
+                        + (f" ({failure})" if failure else ""))
         if not content.strip():
             raise _Soft("empty content")
         return content, {"model": self.model, "usage": usage, "ms": ms,
@@ -431,6 +468,10 @@ class HarnessClient:
             attempts += 1
             if attempt:
                 self.meter.retries += 1
+                # transient provider errors (Modal 429 bursts, cold starts)
+                # deserve a breath, not an instant re-poke
+                await asyncio.sleep(self.backoff[min(attempt - 1,
+                                                     len(self.backoff) - 1)])
             try:
                 content, meta = await self._run_once(task, unit_id=unit_id,
                                                      mode=mode, attempt=attempt)
@@ -441,6 +482,7 @@ class HarnessClient:
                 last_err = f"{type(e).__name__}: {e}"
         if rescue and mode == "extract":            # re-derive rescue x1 (HM-3)
             self.meter.rescues += 1
+            await asyncio.sleep(self.backoff[-1])
             rtask = build_task(system, user, tail, mode="extract",
                                unit_id=unit_id, max_tokens=max_tokens,
                                effort="high", in_task_contract=in_task) + (

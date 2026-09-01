@@ -23,9 +23,11 @@ class TinyOut(BaseModel):
 
 
 class FakeRunResult:
-    def __init__(self, final_response: str, finish_reason: str | None = "completed"):
+    def __init__(self, final_response: str, finish_reason: str | None = "completed",
+                 events: list | None = None):
         self.final_response = final_response
         self.finish_reason = finish_reason
+        self.events = events or []
 
 
 class FakeRuntime:
@@ -52,7 +54,8 @@ class FakeRuntime:
         if spec.get("sleep"):
             time.sleep(spec["sleep"])
         return FakeRunResult(spec.get("content", '{"answer": "ok"}'),
-                             spec.get("finish_reason", "completed"))
+                             spec.get("finish_reason", "completed"),
+                             spec.get("events"))
 
 
 def make_factory(script: list[dict], calls: list[dict], rts: list[FakeRuntime]):
@@ -64,6 +67,7 @@ def make_factory(script: list[dict], calls: list[dict], rts: list[FakeRuntime]):
 
 
 def client(factory, cap: float = 5.0, concurrency: int = 2, **kw) -> HarnessClient:
+    kw.setdefault("backoff", (0, 0))       # instant ladder in tests
     return HarnessClient("test-pass", cap, concurrency=concurrency,
                          runtime_factory=factory, **kw)
 
@@ -177,6 +181,33 @@ def test_hm4_maxtokens_finish_reason_is_soft():
     out, meta = run(go())
     assert out.answer == "ok" and meta["attempts"] == 2
     assert c.meter.retries == 1
+
+
+def test_finish_failure_surfaces_in_journal_and_quarantine(tmp_path):
+    """A provider failure message (e.g. Modal 429) must be readable in the
+    journal and the quarantine detail — never only in the session store."""
+    ev = [{"type": "turn/end",
+           "data": {"reason": {"kind": "error",
+                               "failure": {"message": "429 Plan credits "
+                                           "cannot be applied"}}}}]
+    script = [{"finish_reason": "error", "content": "", "events": ev}] * 4
+    calls, rts = [], []
+    jp = tmp_path / "j.jsonl"
+    c = client(make_factory(script, calls, rts), journal_path=jp)
+
+    async def go():
+        try:
+            await c.chat(system="S", user="U", mode="extract",
+                         unit_id="u1", out_model=TinyOut)
+        except UnitQuarantined as e:
+            await c.close()
+            return e
+        raise AssertionError("expected UnitQuarantined")
+
+    err = run(go())
+    assert "429 Plan credits" in err.detail
+    entry = json.loads(jp.read_text("utf-8").splitlines()[0])
+    assert entry["finish_failure"].startswith("429 Plan credits")
 
 
 def test_hm4_error_finish_reason_and_runtime_exception_are_soft():
