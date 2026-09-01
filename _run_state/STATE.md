@@ -6,7 +6,7 @@ the harness lane's worker model failed the bar honestly. S2 ship-gate item 2
 (a second real collection) DONE. 2026-07-31→09-01.** Trust this file + git
 over any memory; RATIFIED.md holds the operator's standing delegation (items
 7-9 added 2026-09-01; **item 9 changes an S1 falsifier and is flagged for
-your review**). 164 pytest + ruff clean; all numbers from real runs.
+your review**). 172 pytest + ruff clean; all numbers from real runs.
 Published public MIT at github.com/bochen2029-pixel/scriptorium.
 
 **The one thing between here and the product: ~$25 more of DeepSeek balance.**
@@ -212,7 +212,7 @@ Inspect it with: `scriptorium.cmd query C:\_DAD\scriptorium-repo-archive`
 
 ## Session log 2026-09-01 (Claude Code) — what changed, in one place
 
-Suite went 113 → **164 pytest + ruff clean**; every item below is committed and
+Suite went 113 → **172 pytest + ruff clean**; every item below is committed and
 pushed (survey docs stay local per RATIFIED 7).
 
 **Polish round (a deliberate quality pass over the day's own work, measured):**
@@ -246,6 +246,29 @@ pushed (survey docs stay local per RATIFIED 7).
   every timeout degraded to "proceed uncoordinated" — the guard weakened
   exactly when two drivers were present); `select_rows` no longer sorts the
   caller's list in place.
+
+**Code review of the whole session diff (10 angles, each candidate verified
+against the quoted code): 15 findings, 15 fixed, +8 tests → 172 green.**
+The ones that mattered for the pending full read: the pass lease is now kept
+alive by a background task (`a2a.LeaseKeeper`) for the WHOLE pass — the
+per-batch/per-phase heartbeat calls could not cover a single phase or batch
+longer than 15 minutes, and a lapsed lease lets a second driver in mid-pass;
+chunk leases get their own one-hour TTL (`CHUNK_LEASE_TTL`) because they are
+never renewed and a retry-heavy batch can outlive the pass TTL, after which a
+co-driver re-claims chunks still in flight and both pay for them; `run_read`
+consults the bus FIRST and builds client/store/index inside the try, so a
+refusal builds nothing and the finally always closes what exists; a refused
+lease now leaves the bus instead of stranding a joined ghost agent. Also:
+`CardsReader` and `iter_rows` now agree on a newline-less final line; the
+charters roster cannot clobber a same-named archive; the fence skips a keyed
+row without a card instead of crashing; `--json` query reports carry the
+EXACT tape bytes of a derived span (normalization happens only in render);
+one `embed_into` is the single way a chunk becomes a vector (live read and
+backfill); `_charter_baseline` uses `parse_yamlite` instead of a second
+parser; `summary()` makes one pass over chunks instead of one SELECT per
+card. Production paths re-proven afterwards: v2 preflight identical, repo
+fence 87.43% unchanged, harness mock e2e green with the keeper live on the
+bus.
 
 **Dual mode finished and then honestly qualified** (rounds 5-9, full evidence
 in HARNESS_MODE_DESIGN.md): all four designed A2A increments built (per-chunk

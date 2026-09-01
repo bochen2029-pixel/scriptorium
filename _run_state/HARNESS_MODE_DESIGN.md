@@ -383,6 +383,14 @@ lazy-imported only when a harness client is constructed).
 
 ## A2A layer (v2 — items 2/3/4 BUILT in round 5, see top; original design below)
 
+Lease lifetimes, settled by the 2026-09-01 review: the PASS lease (TTL 900s) is renewed by
+`a2a.LeaseKeeper`, a background task started for the whole pass — hand-placed heartbeat calls
+between phases or batches cannot cover a single phase or batch that runs longer than the TTL,
+and a lapsed lease admits a second driver mid-pass. CHUNK leases are never renewed (a card is
+terminal once fsync'd), so they carry their own `CHUNK_LEASE_TTL` of one hour: it must outlive
+the SLOWEST batch, not the typical one, or a co-driver re-claims chunks still in flight and both
+drivers pay for them. A refused pass lease leaves the bus before exiting (it had already joined).
+
 Wrap each pass in an Intercom run (see survey/intercom.md for the verb contract):
 
 1. **Run room + identity.** Driver `intercom join --harness dsh --kind daemon --project
