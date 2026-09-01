@@ -364,7 +364,12 @@ def test_hm2v2_persona_patch_mode(tmp_path):
     assert "- id: system-prompt" in body
     assert "includeHarnessIdentity: false" in body
     assert "includeRuntimeContext: false" in body
-    assert json.dumps("FROZEN SYS PREFIX") in body
+    # the persona ships with the END-OF-CONTRACT boundary appended (foreign
+    # plugin sections follow the persona in the composed system role), and
+    # every tool row is unmounted for single-shot workers (HM-8)
+    assert json.dumps("FROZEN SYS PREFIX" + harness.PERSONA_END) in body
+    for row in harness.WORKER_DISABLED_ROWS:
+        assert f"- id: {row}\n  disabled: true" in body
     assert rts[0].spec["patches"] == (str(patch),)
     task = calls[0]["task"]
     assert harness.BOUNDARY not in task and "FROZEN SYS PREFIX" not in task
@@ -434,16 +439,18 @@ def test_hm2v2_estimator_counts_persona(tmp_path):
 
     run(go())
     task_len = len(calls[0]["task"])
-    assert c.meter.in_miss == (task_len + len(persona)) // c.chars_per_token
+    sent = len(persona) + len(harness.PERSONA_END)   # what the system role carries
+    assert c.meter.in_miss == (task_len + sent) // c.chars_per_token
 
 
 def test_write_persona_patch_roundtrip(tmp_path):
-    """Arbitrary rubric text survives the JSON-escaped YAML scalar exactly."""
+    """Arbitrary rubric text survives the JSON-escaped YAML scalar exactly
+    (with the END-OF-CONTRACT boundary appended)."""
     nasty = 'quotes " and \\backslash\\ and\nnewlines\tand tabs — μñicode: 你好'
     p = harness.write_persona_patch(nasty, tmp_path / "persona.patch.yml")
     line = next(ln for ln in p.read_text("utf-8").splitlines()
                 if ln.strip().startswith("persona: "))
-    assert json.loads(line.split("persona: ", 1)[1]) == nasty
+    assert json.loads(line.split("persona: ", 1)[1]) == nasty + harness.PERSONA_END
 
 
 def test_journal_records_estimated_usage(tmp_path):

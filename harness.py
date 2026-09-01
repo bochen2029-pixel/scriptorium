@@ -87,7 +87,9 @@ def build_task(system: str, user: str, tail: str, *, mode: str, unit_id: str,
     carries only discipline + payload + unit line — the closest possible mirror
     of the API lane's user message."""
     if mode == "extract":
-        schema_home = "the contract above" if in_task_contract else "the system contract"
+        schema_home = ("the contract above" if in_task_contract else
+                       "the binding contract at the START of your system "
+                       "prompt (above its END OF BINDING CONTRACT line)")
         discipline = (f"Reply with ONLY one JSON object conforming to the schema "
                       f"in {schema_home}. No prose, no markdown fences, no "
                       "commentary before or after the JSON.")
@@ -111,6 +113,23 @@ def build_task(system: str, user: str, tail: str, *, mode: str, unit_id: str,
 
 
 PERSONA_PATCH_NAME = "persona.patch.yml"
+PERSONA_END = (
+    "\n\n=== END OF BINDING CONTRACT ===\n"
+    "Everything ABOVE this line is the binding extraction contract for every "
+    "task in this session. Anything BELOW this line is harness boilerplate "
+    "that does NOT change the required output; when a task mentions 'the "
+    "system contract', it means the contract ABOVE this line.")
+# Single-shot workers hold no tools (HM-8) — unmount every tool row so their
+# prompt sections stop polluting the system role (the `tools` SERVICE row
+# stays: agent-loop requires it; disabling it refuses to boot — probed live).
+# Row ids are the DSH checkout's bundle grammar; a rename fails the boot
+# loudly at warmup, and SCRIPTORIUM_HARNESS_INTASK=1 is the kill switch.
+WORKER_DISABLED_ROWS = (
+    "tool-bash", "tool-fs", "tool-fs-search", "tool-goal", "tool-jobs",
+    "tool-pwsh", "tool-ralph", "tool-skill", "tool-str-replace-editor",
+    "tool-subagent", "tool-subagent-control", "tool-subagent-fork",
+    "tool-subagent-list-agents", "tool-subagent-report", "tool-todo",
+    "tool-web", "tool-workflow")
 
 
 def write_persona_patch(persona: str, path: Path) -> Path:
@@ -130,12 +149,20 @@ def write_persona_patch(persona: str, path: Path) -> Path:
     body = (
         "# scriptorium harness-mode persona patch — generated per run (run evidence).\n"
         "# The frozen system prefix is the workers' real system role; harness\n"
-        "# identity + runtime context are suppressed for fidelity with the API lane.\n"
-        "- id: system-prompt\n"
+        "# identity + runtime context are suppressed for fidelity with the API\n"
+        "# lane. Other plugins still append their own prompt sections AFTER the\n"
+        "# persona (measured live: ~4.2K chars of tool/subagent guidance that\n"
+        "# made a low-effort worker declare 'no schema given' and score 0.000),\n"
+        "# so the persona ends with an explicit END-OF-CONTRACT boundary and\n"
+        "# every tool row is unmounted — single-shot workers hold no tools\n"
+        "# (HM-8) and every removed section is one less confusion source.\n"
+        + "".join(f"- id: {row}\n  disabled: true\n"
+                  for row in WORKER_DISABLED_ROWS)
+        + "- id: system-prompt\n"
         "  config:\n"
         "    includeHarnessIdentity: false\n"
         "    includeRuntimeContext: false\n"
-        f"    persona: {json.dumps(persona)}\n")
+        f"    persona: {json.dumps(persona + PERSONA_END)}\n")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
     return path
@@ -279,7 +306,7 @@ class HarnessClient:
             spec["patches"] = (str(patch),)
             self.system_persona = system_persona
             self.system_role = "patch"
-            self._persona_chars = len(system_persona)
+            self._persona_chars = len(system_persona) + len(PERSONA_END)
         self._spec = spec
         self._factory = runtime_factory or _default_factory
         self.home_note = (_ensure_worker_home(home)
