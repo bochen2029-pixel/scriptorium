@@ -26,6 +26,7 @@ import math
 import random
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -349,7 +350,11 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
     if (charter / "charter.lock").exists() and not rescore_only:
         raise SystemExit("charter is FROZEN; a re-derive is a new catalog version "
                          "(spec section 5) — refuse. Use --rescore-only to re-run QC.")
-    run_id = "p1-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    # unique per DRIVER, not per second: two co-drivers starting in the same
+    # second must not interleave journals in one runs/<id>/ (intake already
+    # suffixes its run ids the same way)
+    run_id = ("p1-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+              + "-" + uuid.uuid4().hex[:6])
     runs_dir = root / "runs" / run_id
     runs_dir.mkdir(parents=True, exist_ok=True)
     # The bus first: a lease refusal exits before anything is built.

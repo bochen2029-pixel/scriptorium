@@ -38,6 +38,7 @@ import os
 import sqlite3
 import struct
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -282,7 +283,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
                    provider: str = "api", embed: bool = True,
                    retry_quarantined: bool = False,
                    out_tokens: int = OUT_TOKENS,
-                   dry_run: bool = False) -> dict[str, Any]:
+                   dry_run: bool = False,
+                   co_drive: bool = False) -> dict[str, Any]:
     if concurrency is None:
         concurrency = BATCH_SIZE if provider == "api" else HARNESS_CONCURRENCY
     _mf, root = load_manifest(target)
@@ -292,12 +294,23 @@ async def run_read(target: str | Path, *, usd_cap: float,
     system = rubric + "\n\n" + _refcard_prompt()
     prefix_tokens = estimate_tokens(system)
 
-    run_id = "p2-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    # unique per DRIVER, not per second: two co-drivers starting in the same
+    # second must not interleave journals in one runs/<id>/ (intake already
+    # suffixes its run ids the same way)
+    run_id = ("p2-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+              + "-" + uuid.uuid4().hex[:6])
     runs_dir = root / "runs" / run_id
     runs_dir.mkdir(parents=True, exist_ok=True)
     # The bus first: a lease refusal must exit before anything is built (no
     # client to close, no persona patch written, nothing to release).
-    bridge = a2a.begin("P2-read", root.name)
+    # --co-drive: several sessions (Claude Code + DSH, say) work one catalog
+    # at once — per-driver pass leases, per-chunk leases as the exclusion.
+    bridge = a2a.begin("P2-read", root.name, exclusive=not co_drive)
+    if co_drive and bridge is None:
+        raise SystemExit(
+            "--co-drive needs SCRIPTORIUM_A2A=1 and a reachable Intercom bus: "
+            "without per-chunk leases two drivers would double-read the same "
+            "chunks (and pay twice). Run without --co-drive for a solo read.")
     stats = {"cards": 0, "quarantined": 0, "vectors": 0, "skipped_leased": 0,
              "prefix_hits": 0, "calls": 0, "calibrations": []}
 

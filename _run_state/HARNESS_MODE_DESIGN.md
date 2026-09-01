@@ -391,6 +391,19 @@ terminal once fsync'd), so they carry their own `CHUNK_LEASE_TTL` of one hour: i
 the SLOWEST batch, not the typical one, or a co-driver re-claims chunks still in flight and both
 drivers pay for them. A refused pass lease leaves the bus before exiting (it had already joined).
 
+**Co-driving (the "intermingle"):** by default the pass lease is EXCLUSIVE — one driver per
+archive+pass — which is the safe default and the only mode for `discover` (one writer of
+charter files). `read --co-drive` (opt-in, requires a reachable bus) makes the pass lease
+per-driver (`scriptorium:<archive>:p2-read:driver:<id>`), so a Claude Code session and a DSH
+session can work ONE catalog at the same time: the per-chunk leases partition the work, the
+resume law keeps every key single-writer, and each driver's run_start/batch_done/run_end lands
+in the same project room. Co-drive without the bus is REFUSED (two uncoordinated drivers would
+double-read and pay twice). The three roles are independent: the DRIVER is whichever session
+runs the CLI (identity on the bus reports claude-code or dsh honestly), the WORKERS are chosen
+by `--provider` (api = DeepSeek, harness = DSH subagents of the session model), and the BUS is
+the opt-in coordination between drivers. Every combination has been run live except a stronger
+harness worker model, which is the one thing round 9 found missing.
+
 Wrap each pass in an Intercom run (see survey/intercom.md for the verb contract):
 
 1. **Run room + identity.** Driver `intercom join --harness dsh --kind daemon --project

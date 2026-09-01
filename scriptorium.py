@@ -267,6 +267,12 @@ def main(argv: list[str] | None = None) -> int:
                                 "charter, select the slice, gate the budget "
                                 "and prove the tape readable — then stop "
                                 "without spending anything")
+            p.add_argument("--co-drive", action="store_true",
+                           help="co-work this catalog with other driver "
+                                "sessions over Intercom (needs "
+                                "SCRIPTORIUM_A2A=1): per-driver pass lease, "
+                                "per-chunk leases partition the work; refused "
+                                "without a reachable bus")
         if name == "query":
             p.add_argument("terms", nargs="?", default=None,
                            help="FTS5 match expression, e.g. "
@@ -316,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
             embed=not args.no_embed, concurrency=args.concurrency,
             retry_quarantined=args.retry_quarantined,
             out_tokens=args.max_out_tokens or OUT_TOKENS,
-            dry_run=args.dry_run))
+            dry_run=args.dry_run, co_drive=args.co_drive))
         return 0
     if args.cmd == "query":
         import json as _json

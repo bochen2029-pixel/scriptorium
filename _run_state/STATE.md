@@ -6,7 +6,7 @@ the harness lane's worker model failed the bar honestly. S2 ship-gate item 2
 (a second real collection) DONE. 2026-07-31→09-01.** Trust this file + git
 over any memory; RATIFIED.md holds the operator's standing delegation (items
 7-9 added 2026-09-01; **item 9 changes an S1 falsifier and is flagged for
-your review**). 172 pytest + ruff clean; all numbers from real runs.
+your review**). 176 pytest + ruff clean; all numbers from real runs.
 Published public MIT at github.com/bochen2029-pixel/scriptorium.
 
 **The one thing between here and the product: ~$25 more of DeepSeek balance.**
@@ -212,7 +212,7 @@ Inspect it with: `scriptorium.cmd query C:\_DAD\scriptorium-repo-archive`
 
 ## Session log 2026-09-01 (Claude Code) — what changed, in one place
 
-Suite went 113 → **172 pytest + ruff clean**; every item below is committed and
+Suite went 113 → **176 pytest + ruff clean**; every item below is committed and
 pushed (survey docs stay local per RATIFIED 7).
 
 **Polish round (a deliberate quality pass over the day's own work, measured):**
@@ -269,6 +269,24 @@ parser; `summary()` makes one pass over chunks instead of one SELECT per
 card. Production paths re-proven afterwards: v2 preflight identical, repo
 fence 87.43% unchanged, harness mock e2e green with the keeper live on the
 bus.
+
+**Co-driving — the "intermingle" — now actually works (`read --co-drive`).**
+The operator asked whether scriptorium can be driven by DSH with Intercom in
+the loop. The three roles are independent and were already separately live:
+the DRIVER is whichever session runs the CLI (Claude Code or DSH; the bus join
+reports which), the WORKERS are chosen by `--provider` (api = DeepSeek,
+harness = DSH subagents), the BUS is opt-in coordination. But two drivers
+could NOT share one catalog: the exclusive pass lease refused the second one
+before the per-chunk leases ever mattered. `--co-drive` (opt-in; discover
+stays exclusive — one writer of charter files) makes the pass lease
+per-driver (`…:p2-read:driver:<id>`) so the chunk leases become the exclusion;
+co-drive without a reachable bus is REFUSED (uncoordinated drivers would
+double-read and pay twice). **Proven live on the real bus:** two concurrent
+`--co-drive --dry-run`s on the v2 archive — `gd9fftoo` joined as claude-code,
+`gusqd4ro` as dsh — both admitted with their own leases, both `run_start`s in
+the same project room, $0. That live run also caught that two drivers
+starting in the same second shared a `run_id` (and so a `runs/<id>/`
+directory): pass run ids now carry a 6-hex suffix like intake's. 176 tests.
 
 **Dual mode finished and then honestly qualified** (rounds 5-9, full evidence
 in HARNESS_MODE_DESIGN.md): all four designed A2A increments built (per-chunk

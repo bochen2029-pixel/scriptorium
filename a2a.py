@@ -158,11 +158,24 @@ class IntercomBridge:
         self._cmd("leave", "--me", self._joined(), "--room", self.project)
 
 
-def begin(pass_name: str, archive_name: str) -> IntercomBridge | None:
-    """join + claim the pass lease. An explicit refusal (another live driver
-    holds the pass) stops the pass via SystemExit; any soft failure returns
-    None so the pass runs uncoordinated. Disabled (None) unless
-    SCRIPTORIUM_A2A=1."""
+def begin(pass_name: str, archive_name: str, *,
+          exclusive: bool = True) -> IntercomBridge | None:
+    """join + claim the pass lease.
+
+    exclusive=True (default): ONE driver per archive+pass — a second driver's
+    start is refused (SystemExit) before any spend. This is the safe default
+    and the only mode for discover (one writer of charter files).
+
+    exclusive=False (co-drive): the lease is per DRIVER
+    (`scriptorium:<archive>:<pass>:driver:<id>`), so several sessions — a
+    Claude Code session and a DSH session, say — may work ONE catalog at the
+    same time. The per-chunk leases (try_claim) are then the exclusion that
+    matters, and the resume law keeps every key single-writer regardless. A
+    co-driver must actually have the bus: without chunk leases two drivers
+    would double-read, so read.py refuses co-drive when this returns None.
+
+    Any soft failure returns None so the pass runs uncoordinated. Disabled
+    (None) unless SCRIPTORIUM_A2A=1."""
     if not _enabled():
         return None
     cli = os.environ.get("INTERCOM_PY", "").strip() or INTERCOM_PY
@@ -174,6 +187,8 @@ def begin(pass_name: str, archive_name: str) -> IntercomBridge | None:
                             lane=f"orchestrator-{pass_name.lower()}", cli=cli)
     try:
         me = bridge.join()
+        if not exclusive:
+            resource = f"{resource}:driver:{me}"
         bridge.claim(resource)
     except A2ARefused as e:
         # we already joined: leave, or every refused start strands a ghost
@@ -190,7 +205,7 @@ def begin(pass_name: str, archive_name: str) -> IntercomBridge | None:
     bridge.resource = resource
     bridge.claimed_at = time.monotonic()
     _note(f"joined as {me} (project {bridge.project}, lane {bridge.lane}, "
-          f"lease {resource})")
+          f"lease {resource}{'' if exclusive else ' — CO-DRIVING: chunk leases partition the work'})")
     return bridge
 
 

@@ -324,3 +324,29 @@ def test_lease_keeper_renews_in_the_background(monkeypatch):
         await k.stop()
 
     asyncio.run(inert())                        # disabled bus: pure no-op
+
+
+def test_co_drive_pass_lease_is_per_driver(monkeypatch):
+    """exclusive=False: each driver claims its OWN pass lease, so several
+    sessions are admitted to one archive+pass; the default stays one shared,
+    exclusive resource."""
+    monkeypatch.setenv("SCRIPTORIUM_A2A", "1")
+    ids = iter(["drvA\n", "drvB\n", "drvC\n"])
+    claims: list[str] = []
+
+    def runner(argv):
+        if argv[0] == "join":
+            return CP(0, next(ids))
+        if argv[0] == "claim":
+            claims.append(argv[argv.index("--resource") + 1])
+        return CP(0, "granted", "")
+
+    monkeypatch.setattr(a2a.IntercomBridge, "_subprocess_runner",
+                        staticmethod(runner))
+    a = a2a.begin("P2-read", "arch", exclusive=False)
+    b = a2a.begin("P2-read", "arch", exclusive=False)
+    c = a2a.begin("P2-read", "arch")
+    assert a.resource == "scriptorium:arch:p2-read:driver:drvA"
+    assert b.resource == "scriptorium:arch:p2-read:driver:drvB"
+    assert c.resource == "scriptorium:arch:p2-read"          # exclusive default
+    assert claims == [a.resource, b.resource, c.resource]

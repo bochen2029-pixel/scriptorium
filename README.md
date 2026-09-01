@@ -154,7 +154,12 @@ leases (two drivers can't double-run a pass), per-chunk leases (two
 drivers CAN co-work one catalog without dupes), run findings, and one
 blake2b artifact pin of `cards.jsonl` per run as an attestation receipt.
 Coordination is sugar, never a dependency: any bus failure degrades to a
-no-op and the pass runs on. Design + measured evidence:
+no-op and the pass runs on — except `read --co-drive`, which lets several
+driver sessions (a Claude Code and a DSH session, say) work one catalog at
+once behind per-driver pass leases and is refused without the bus, because
+uncoordinated co-drivers would double-read. The three roles are independent:
+whichever session runs the CLI is the driver, `--provider` picks the workers,
+and the bus is optional glue between drivers. Design + measured evidence:
 [`_run_state/HARNESS_MODE_DESIGN.md`](_run_state/HARNESS_MODE_DESIGN.md).
 
 ## What intake leaves on disk (spec section 3)

@@ -4,6 +4,7 @@ the content-routed stub; resume with zero dupes/gaps; calibration-drift halt
 
 import asyncio
 import json
+import re
 import shutil
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -298,3 +299,68 @@ def test_dry_run_on_a_fully_read_slice_keeps_its_shape(stubs):
     rep = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, dry_run=True))
     assert rep["dry_run"] is True and rep["would_refuse"] is False
     assert rep["cards"] == 0 and rep["already"] == 12
+
+
+def test_co_drive_refuses_without_a_bus(stubs, monkeypatch):
+    """Co-driving without chunk leases would double-read: refuse, never
+    silently run solo."""
+    monkeypatch.delenv("SCRIPTORIUM_A2A", raising=False)
+    arch = frozen_mini(stubs)
+    with pytest.raises(SystemExit, match="co-drive needs"):
+        asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, co_drive=True))
+    assert read_cards(arch) == []
+
+
+def test_co_drive_two_sessions_partition_one_catalog(stubs, monkeypatch):
+    """Two co-driving sessions against one shared (fake) bus: both pass leases
+    are admitted (per-driver), the chunk leases partition the work, and the
+    union is the whole catalog with zero dupes and zero gaps."""
+    from test_a2a import CP
+
+    import a2a
+
+    arch = frozen_mini(stubs)
+    monkeypatch.setenv("SCRIPTORIUM_A2A", "1")
+    chunk = [f"scriptorium:{arch.name}:p2:doc{i:02d}{'0' * 26}:0" for i in range(12)]
+    owner = {k: ("drvB" if i % 2 else "drvA") for i, k in enumerate(chunk)}
+    lock = threading.Lock()
+
+    def bus_for(me: str):
+        def runner(argv):
+            if argv[0] == "join":
+                return CP(0, me + "\n")
+            if argv[0] == "claim":
+                res = argv[argv.index("--resource") + 1]
+                with lock:
+                    holder = owner.setdefault(res, me)   # CAS: first claimant wins
+                return (CP(0, "granted", "") if holder == me
+                        else CP(3, "", f"held by {holder}"))
+            return CP(0, "ok", "")
+        return runner
+
+    monkeypatch.setattr(a2a.IntercomBridge, "_subprocess_runner",
+                        staticmethod(bus_for("drvA")))
+    ra = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4,
+                              co_drive=True))
+    assert ra["cards"] == 6 and ra["skipped_leased"] == 6   # A's half only
+    assert owner[f"scriptorium:{arch.name}:p2-read:driver:drvA"] == "drvA"
+
+    monkeypatch.setattr(a2a.IntercomBridge, "_subprocess_runner",
+                        staticmethod(bus_for("drvB")))
+    rb = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4,
+                              co_drive=True))
+    assert rb["cards"] == 6 and rb["skipped_leased"] == 0    # A's are done keys
+    assert owner[f"scriptorium:{arch.name}:p2-read:driver:drvB"] == "drvB"
+
+    keys = [(c["doc_id"], c["seq"]) for c in read_cards(arch)]
+    assert len(keys) == len(set(keys)) == 12                  # union, no dupes
+
+
+def test_run_ids_are_unique_per_driver_not_per_second(stubs):
+    """Two co-drivers starting in the same second must not share runs/<id>/."""
+    arch = frozen_mini(stubs)
+    a = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, dry_run=True))
+    b = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, dry_run=True))
+    assert a["run_id"] != b["run_id"]
+    assert all(re.fullmatch(r"p2-\d{8}T\d{6}Z-[0-9a-f]{6}", r["run_id"])
+               for r in (a, b))
