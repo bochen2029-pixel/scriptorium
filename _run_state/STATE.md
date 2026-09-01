@@ -1,9 +1,11 @@
 # scriptorium — run state
 
-**S0 GREEN · S1 GREEN · S2 code green + validated on TWO tapes. 2026-07-31→08-01.**
-Trust this file + git over any memory; RATIFIED.md holds the operator's standing
-delegation. 84 pytest + ruff clean; all numbers from real runs. Published public
-MIT at github.com/bochen2029-pixel/scriptorium.
+**S0 GREEN · S1 GREEN · S2 code green + validated on TWO tapes · DUAL MODE
+(api + harness) BUILT, HARDENED, live-blocked only on the Modal window.
+2026-07-31→09-01.** Trust this file + git over any memory; RATIFIED.md holds
+the operator's standing delegation (items 7+8 added 2026-09-01). 125 pytest +
+ruff clean; all numbers from real runs. Published public MIT at
+github.com/bochen2029-pixel/scriptorium.
 
 ## TL;DR for the next session
 
@@ -16,12 +18,16 @@ verifiable, negatives forever):
   0.710/0.718 — BETTER than v1), OUTREACH slice read (56 cards, fence 87.2%
   verified vs v1's 71.5%). **v2 is the production tape.**
 
-**The one open action = operator top-up.** Full v2 read projects to ~$32 at
-$0.184/M; DeepSeek balance is ~$6.8. Then, one command:
-`scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 35`
-(resumable, calibration-gated, kill-safe). That produces the full Cards + index
-for corpus #1 and completes the S2 ship-gate's "two real collections" on the
-clean tape.
+**Two lanes to the full v2 read now exist; each needs one thing:**
+- **api lane**: operator top-up (~$32 at $0.184/M; balance ~$6.8), then
+  `scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 35`.
+- **harness lane** (the operator's own GLM-5.3-Flash via Modal, ~$0 cash):
+  waits on the Modal plan window (429 mid-session 2026-09-01, see BLOCKED),
+  then `SCRIPTORIUM_A2A=1 SCRIPTORIUM_DSH_BIN=C:/scriptorium/_local/dsh-dev.cmd
+  scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --provider harness
+  --cap 35` — but the FERRYMAN qualification slice (auto-retrying via
+  `_local/ferryman_watcher.sh`) and its fence comparison come FIRST; the full
+  harness read stays the operator's call.
 
 ## v2 pipeline results (2026-08-01) — the compression paid off twice
 
@@ -138,6 +144,48 @@ was corrected to the operator).
 Session spend so far: **$9.19** (S1 $1.64 + $0.91, P2 slice $6.63, smokes).
 DeepSeek balance ~ $8.1.
 
+## Dual mode round 5-6 (2026-09-01, Claude Code session) — A2A v2 built; persona hardened by live failure
+
+All prior harness work committed + pushed (71ea18f); this session's increments
+(full detail + evidence: HARNESS_MODE_DESIGN.md "Round-5"):
+
+- **Per-chunk leases** (`a2a.try_claim`, `scriptorium:<archive>:p2:<doc>:<seq>`):
+  two drivers co-work one catalog, refusal skips without writing, never
+  released (cards are terminal; TTL 900s is the janitor). Multi-driver
+  partition + A2A-off resume proven in tests (11 cards + 1 leased-away → 12
+  unique, zero dupes/gaps).
+- **Batch findings + halts on the bus**; **artifact-pin attestation** (ONE pin
+  of cards.jsonl at run end, blake2b receipt — card-grain attestation
+  evaluated and REJECTED as driver-posted chatter; verdict in design doc).
+- **Persona patch (HM-2 v2)**: the frozen prefix is now the workers' REAL
+  system role via a generated Cordis patch. FIRST live run scored calibration
+  **0.000 → halt law fired perfectly** (checkpoint-clean, zero cards, pennies).
+  Session-store forensics: persona applied byte-complete BUT other plugins
+  appended ~4.2K chars of tool/subagent guidance after it; a low-effort worker
+  declared "no schema given" and pydantic's fully-defaulted CardV0 accepted
+  its invented JSON as empty cards. Fix (probed to ZERO foreign chars on the
+  real Cordis loader): persona ends with an explicit END-OF-BINDING-CONTRACT
+  boundary + every `tool-*` row unmounted (the `tools` SERVICE stays —
+  agent-loop requires it; disabling it refuses boot, probed). Kill switch:
+  `SCRIPTORIUM_HARNESS_INTASK=1`.
+- **Resilience**: runtime failure messages (e.g. the Modal 429) now surface in
+  ds_calls.jsonl as `finish_failure` and in quarantine details; HM-3 ladder
+  backs off 5s/15s between attempts. `--concurrency` CLI flag (harness default
+  6 — each slot is a full runtime subprocess). CALIB_SHARDS 8→16 (the
+  variance observation; band idea rejected — the bar stays a hard law).
+  Charter baseline now prints from charter.yaml (was "None" cosmetic).
+- **Driver identity honest** (RATIFIED 8): bus joins say claude-code or dsh.
+- Live during the failed slice: run_start/calibration/OPERATOR-ATTENTION-halt
+  findings + lease + release all verified on the real bus.
+- **FERRYMAN v2 slice (143 chunks, 649,442 tok — 55x smaller than v1's
+  36.1M)**: LAUNCH BLOCKED by the Modal plan window mid-session
+  (`429 Plan credits cannot be applied to shared endpoint usage`) after
+  attempt 1's calibration got real GLM answers. `_local/ferryman_watcher.sh`
+  auto-retries every 20 min (16 attempts ≈ 5.3h), retrying ONLY on the
+  rate-window signature; stops on drift/cap/unexpected. Its log:
+  `_local/ferryman_v2_harness_watch.log`; est. cost per attempt ~3 warmup
+  calls; slice estimate $0.16 under cap $2.
+
 ## Harness mode (2026-09-01) — provider="harness" LANDED (transport + tests)
 
 Optional second provider seam beside ds.py: `discover/read --provider harness`
@@ -187,16 +235,20 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
 
 ## Observations for the next session
 
-- Calibration variance: 8-shard rotating subsets swing hard (0.702 vs 0.571,
-  full-set mean 0.676). For the full read: larger or fixed calibration subset
-  (16-24 shards), and consider a variance-aware band rather than a hard floor.
+- ~~Calibration variance~~ ADDRESSED 2026-09-01: CALIB_SHARDS default 8→16
+  (swing ~0.7x); variance-aware band considered and rejected (the bar is the
+  charter's scored floor; halt-below-bar stays a hard law).
 - Batches 30-40 ran ~5 min each (retry-heavy chunks; 22 quarantines total are
   json-hostile transcript chunks — the run journal ds_calls.jsonl has full
   reasoning_content for diagnosis). Consider: per-call max_tokens bump for
   P2 (some chunks likely exhausted 6000 with dense cards), and a
   --retry-quarantined flag.
-- charter baseline shows "None" in calibration lines (scoring lives in
-  charter.yaml, not charter.lock) — cosmetic, fix when touching read.py.
+- ~~charter baseline "None"~~ FIXED 2026-09-01: `_charter_baseline` parses
+  scoring.runs[-1] from charter.yaml (stdlib, targeted).
+- CardV0 is fully defaulted — ANY JSON object validates as an empty card
+  (measured live: schema-less GLM answers parsed then scored 0.000). Fine
+  under calibration's protection; if a future rubric wants hard schema
+  enforcement, make required fields required in a CardV1.
 - Embedding truncation: vectors embed chunk[:8000] chars (sidecar ctx
   safety) — document/decide before the resident-skeleton stage cares.
 - Parked from earlier (still live): Baidu Unlimited-OCR S2+ eval plan ·
@@ -209,16 +261,39 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
 
 ## BLOCKED
 
-- Full-corpus P2: operator top-up (see above). Nothing else.
+- **Harness lane (v2 FERRYMAN slice + any harness read): the Modal plan
+  window.** Mid-session 2026-09-01 every worker call started returning
+  `429 "Plan credits cannot be applied to shared endpoint usage. Add a payment
+  method or increase your spend limit"`. `_local/ferryman_watcher.sh` retries
+  the slice every 20 min for ~5.3h and needs nothing if the window refreshes
+  on its own. IF the 429 persists past that: it is a Modal plan/billing state
+  only the operator can change (add payment method / raise spend limit), or
+  the operator may bless routing workers via the ZAI credentials instead
+  (`SCRIPTORIUM_HARNESS_PROVIDER`/`MODEL` env — different pocket, so it stays
+  the operator's call).
+- **API lane full-corpus P2: operator top-up** (~$32; balance ~$6.8).
+- Nothing else.
 
 ## Next session's first move
 
-Read this file + RATIFIED.md. If the operator topped up: launch the full v2
-read (command in TL;DR above; consider the calibration-subset fix first — 8
-rotating shards swing 0.57-0.72, want 16-24 or fixed). It's background,
-capped, resumable, kill-safe. When it finishes: run spancheck.py for the
-whole-catalog fence rate, then S3 (`map` + `reread` to convergence), then S4
-(`synthesize` + `certify` — the certificate is the product).
+Read this file + RATIFIED.md. Then check
+`_local/ferryman_v2_harness_watch.log` (tail):
+- **SUCCESS** → run `spancheck.py` on the new harness cards (the run id is in
+  the log), record fence beside api numbers here, and compare cards/fence vs
+  v1-FERRYMAN-api 71.5% and v2-OUTREACH-api 87.2%. A clean slice qualifies
+  the harness lane; the FULL harness read stays the operator's call.
+- **still retrying** → leave it; do other work.
+- **STOP-DRIFT** → GLM couldn't hit the v2 calibration bar with the clean
+  system role: diagnose with the run journal (`finish_failure`, response
+  shapes) + session store; consider effort=medium for calibration, or accept
+  api-lane-only production.
+- **GAVE UP / STOP-*** → see BLOCKED.
+
+If the operator topped up the DeepSeek balance: launch the full v2 api read
+(command in TL;DR; CALIB_SHARDS now defaults 16). When a full read finishes:
+`spancheck.py` for the whole-catalog fence rate, then S3 (`map` + `reread` to
+convergence), then S4 (`synthesize` + `certify` — the certificate is the
+product).
 
 Span fence-check (spancheck.py) is BUILT and is the S2 gate's fence item;
 whole-corpus rate prints after the full read. Exact-offset is 0% on both tapes

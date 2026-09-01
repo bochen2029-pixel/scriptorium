@@ -35,6 +35,7 @@ import asyncio
 import fnmatch
 import json
 import os
+import re
 import sqlite3
 import struct
 import time
@@ -54,13 +55,33 @@ from textnorm import estimate_tokens
 
 BATCH_SIZE = 48
 CALIB_EVERY = 50          # batches (spec section 5 default N=50)
-CALIB_SHARDS = 8
+CALIB_SHARDS = 16         # rotating golden subset per calibration round; 8
+                          # swung 0.57-0.72 on the FERRYMAN v1 slice (SE ~
+                          # sigma/sqrt(n)) — 16 halves nothing but trims the
+                          # swing ~30%; a variance-aware band was considered
+                          # and rejected: the bar is the charter's own scored
+                          # floor and halt-below-bar stays a hard law
 DRIFT_FLOOR = SCORING_BAR  # calibration mean below the charter bar = halt
 HARNESS_CONCURRENCY = 6   # HM-7: each slot is a full runtime subprocess
 
 
 def _refcard_prompt() -> str:
     return (CODE_DIR / "prompts" / "p1_refcard_v0.txt").read_text("utf-8")
+
+
+def _charter_baseline(charter: Path) -> float | None:
+    """scoring.runs[-1] from charter.yaml — the charter's own scored quality,
+    printed beside each calibration mean. Targeted stdlib parse (no YAML dep);
+    scoring lives in charter.yaml, not charter.lock."""
+    try:
+        m = re.search(r"^\s*runs:\s*\[([^\]]*)\]",
+                      (charter / "charter.yaml").read_text("utf-8"), re.M)
+        if m:
+            vals = [float(x) for x in m.group(1).split(",") if x.strip()]
+            return vals[-1] if vals else None
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def verify_frozen_charter(charter: Path) -> dict[str, Any]:
@@ -251,7 +272,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
 
         shards = [json.loads(p.read_text("utf-8")) for p in
                   sorted((charter / "goldens" / "shards").glob("shard-*.json"))]
-        baseline = (charter_lock.get("scoring") or {}).get("runs", [None])[-1]
+        baseline = ((charter_lock.get("scoring") or {}).get("runs", [None])[-1]
+                    or _charter_baseline(charter))
 
         sidecar: EmbedSidecar | None = None
         if embed:
