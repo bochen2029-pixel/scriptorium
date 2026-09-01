@@ -5,6 +5,44 @@ leases (multi-driver co-work), batch findings, artifact-pin attestation, and the
 patch (frozen prefix as the workers' REAL system role). 124 pytest + ruff clean.**
 Companion facts: `_run_state/NEIGHBOR_ORGANS.md` + `_run_state/survey/{intercom,dsh-harness}.md`.
 
+## Round-6 (Claude Code session): the persona patch meets a real model — fails honestly, hardened, re-proven
+
+The first REAL run under the persona patch (v2 FERRYMAN slice, 143 chunks) scored **calibration
+0.000 at batch 0 → the halt law fired perfectly** (checkpoint-clean, zero cards, pennies spent).
+Forensics — the DSH session store (`_local/dsh-home/sessions/…/session.jsonl.zstd`) preserves the
+composed request — showed:
+
+1. The persona APPLIED byte-complete (system startswith rubric+refcard, 6,882 chars exact) — the
+   patch grammar and layer order were correct all along.
+2. BUT the composed system role continued for **4,197 more chars of other plugins' prompt
+   sections** (bash exit-code guidance, read-tool guidance, subagent/workflow guidance).
+   `includeHarnessIdentity/RuntimeContext: false` silence only the system-prompt plugin's own two
+   sections.
+3. GLM-5.3-Flash at effort=low, reading "conforming to the schema in the system contract" while
+   its system prompt ENDED as agent-tooling boilerplate, reasoned verbatim *"no schema given …
+   best effort with a plausible structure"* and emitted invented JSON.
+4. `CardV0` is fully defaulted, so pydantic accepted every invented object as an EMPTY card
+   (zero retries — nothing "failed"), and `compare_cards` scored the empties 0.000. Three
+   independent laws (calibration gate, halt-below-bar, checkpoint-clean) turned a silent
+   quality disaster into a $0.03 diagnosis.
+
+Fix, probed on the real Cordis loader to **ZERO foreign chars** (`_local/persona_probe.py`):
+- the persona now ends with an explicit `=== END OF BINDING CONTRACT ===` boundary
+  (self-defending against any future appended sections);
+- every `tool-*` row is unmounted for workers (HM-8 single-shot; the `tools` SERVICE row must
+  stay — `agent-loop` requires it, and disabling it refuses boot: probed, `assertEntriesActivated`);
+- patch-mode discipline points at "the binding contract at the START of your system prompt".
+
+Then the relaunch hit the OTHER wall: every call `finish=error` with (session-store) `429 "Plan
+credits cannot be applied to shared endpoint usage"` — the operator's Modal plan window closed
+mid-session (attempt 1's calibration had gotten real GLM answers minutes earlier). Hardening that
+followed: `_finish_failure` lifts the runtime's failure message into `ds_calls.jsonl`
+(`finish_failure`) and quarantine details; the HM-3 ladder sleeps 5s/15s between attempts;
+`_local/ferryman_watcher.sh` relaunches the slice every 20 min (retry ONLY on the rate-window
+signature; STOP on drift/cap/unexpected — a quality gate must never be retried into submission).
+The slice completes unattended the moment the window refreshes; warmup fail-fast keeps each
+failed attempt at ~3 calls.
+
 ## Round-5 (Claude Code session): the designed A2A v2 increments, implemented
 
 - **Per-chunk leases (design item 2) — BUILT.** `a2a.try_claim` claims
