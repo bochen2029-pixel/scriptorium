@@ -30,9 +30,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import a2a
 from canon import blake2b128_hex
 from cards import CardV0, OntologyMerged, RubricOut
 from ds import DsClient, UnitQuarantined
+from harness import make_client
 from manifest import load_manifest, parse_yamlite
 from organs import CODE_DIR
 from tape import Tape
@@ -300,7 +302,8 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
                        defects_n: int = 12, seed: int = SEED_DEFAULT,
                        rescore_only: bool = False,
                        concurrency: int = INDUCTION_CONCURRENCY,
-                       base_url: str | None = None) -> dict[str, Any]:
+                       base_url: str | None = None,
+                       provider: str = "api") -> dict[str, Any]:
     _mf, root = load_manifest(target)
     charter = root / "charter"
     if (charter / "charter.lock").exists() and not rescore_only:
@@ -309,8 +312,11 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
     run_id = "p1-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     runs_dir = root / "runs" / run_id
     runs_dir.mkdir(parents=True, exist_ok=True)
-    client = DsClient("P1-discover", usd_cap, concurrency=concurrency,
-                      journal_path=runs_dir / "ds_calls.jsonl", base_url=base_url)
+    client = make_client("P1-discover", usd_cap, provider=provider,
+                         concurrency=concurrency,
+                         journal_path=runs_dir / "ds_calls.jsonl",
+                         base_url=base_url)
+    bridge = a2a.begin("P1-discover", root.name)
     t0 = time.monotonic()
 
     def say(msg: str) -> None:
@@ -329,6 +335,9 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         cells = len({(r.year, r.project) for r in sampled})
         say(f"  sampled {len(sampled)} records, {s_tokens:,} tokens across {cells} cells "
             f"(budget {budget:,})")
+        a2a.note(bridge, f"run_start: {run_id} provider={provider} "
+                         f"sampled={len(sampled)} tokens={s_tokens} "
+                         f"cells={cells} cap=${usd_cap}")
 
         goldens_pool = [r for r in sampled if 400 <= r.tokens <= 6000]
         rng = random.Random(seed + 1)
@@ -531,6 +540,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         return meta
     finally:
         await client.close()
+        a2a.end(bridge, f"${client.meter.usd():.3f} spent")
 
 
 async def _score_once(client: DsClient, shards: list[dict[str, Any]],

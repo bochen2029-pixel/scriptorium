@@ -15,18 +15,26 @@ FORBIDDEN = {
     "everything", "everywhere", "chunker", "earshot", "imguard",  # organs: subprocess only
     "llama_cpp", "yaml", "requests", "numpy", "pandas",
 }
-ALLOWED_THIRD_PARTY = {"pydantic", "httpx", "fitz", "pymupdf", "tiktoken", "pytest"}
+# deepseek_harness: OPTIONAL harness-mode SDK (provider="harness" only), lazy
+# import inside harness._default_factory; the default api path never imports it.
+ALLOWED_THIRD_PARTY = {"pydantic", "httpx", "fitz", "pymupdf", "tiktoken",
+                       "pytest", "deepseek_harness"}
 OWN = {"canon", "tape", "models", "manifest", "organs", "local", "intake",
        "textnorm", "minhash", "scriptorium", "conftest", "ds", "discover",
-       "cards", "read", "spancheck"}
+       "cards", "read", "spancheck", "harness", "a2a"}
 OWN |= {p.stem for p in (REPO / "tests").glob("test_*.py")}
 
 
 def repo_sources() -> list[Path]:
     out = []
+    # amanuensis/ + amanuensis-native/ are untracked sibling subprojects with
+    # their own conventions (dropped inside the repo dir); they are not
+    # scriptorium code and are outside this law until properly committed.
+    skip = {".venv", "_testdata", "__pycache__", "_local",
+            "amanuensis", "amanuensis-native"}
     for p in REPO.rglob("*.py"):
         parts = {q.lower() for q in p.parts}
-        if parts & {".venv", "_testdata", "__pycache__", "_local"}:
+        if parts & skip:
             continue
         out.append(p)
     return out

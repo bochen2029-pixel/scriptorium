@@ -11,6 +11,9 @@ dependencies = [
 
 [project.optional-dependencies]
 tokens = ["tiktoken>=0.7"]
+# optional: --provider harness (DSH worker agents); lazy-imported in
+# harness._default_factory — the default api path never needs it.
+harness = ["deepseek-harness-sdk"]
 
 [dependency-groups]
 dev = [
@@ -21,6 +24,8 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# untracked sibling subprojects with their own conventions, not scriptorium code
+extend-exclude = ["amanuensis", "amanuensis-native"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]

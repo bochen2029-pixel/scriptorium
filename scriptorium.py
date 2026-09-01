@@ -223,6 +223,11 @@ def main(argv: list[str] | None = None) -> int:
         if name == "status":
             p.add_argument("--verify", action="store_true",
                            help="recompute the full hash chain")
+        if name in ("discover", "read"):
+            p.add_argument("--provider", choices=("api", "harness"),
+                           default="api",
+                           help="unit-call transport: DeepSeek API (default) or "
+                                "DSH worker agents (optional harness mode)")
         if name == "discover":
             p.add_argument("--cap", type=float, default=5.0,
                            help="usd_cap for the pass (PS-8; default 5.00)")
@@ -261,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(run_discover(
             args.target, usd_cap=args.cap, sample_tokens=args.sample_tokens,
             goldens_n=args.goldens, defects_n=args.defects, seed=args.seed,
-            rescore_only=args.rescore_only))
+            rescore_only=args.rescore_only, provider=args.provider))
         return 0
     if args.cmd == "freeze":
         from discover import run_freeze
@@ -274,7 +279,8 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(run_read(
             args.target, usd_cap=args.cap,
             projects=args.projects.split(",") if args.projects else None,
-            max_tokens=args.max_tokens, embed=not args.no_embed))
+            max_tokens=args.max_tokens, provider=args.provider,
+            embed=not args.no_embed))
         return 0
     rung, what = RUNG_STUBS[args.cmd]
     print(f"`{args.cmd}` is rung {rung} ({what}).\n"

@@ -41,10 +41,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+import a2a
 from canon import blake2b128_hex
 from cards import CardV0
 from discover import SCORING_BAR, RecRow, compare_cards, fetch_texts, scan_tape
-from ds import CapExceeded, DsClient, UnitQuarantined
+from ds import CapExceeded, UnitQuarantined
+from harness import make_client
 from local import EmbedSidecar
 from manifest import load_manifest
 from organs import CODE_DIR
@@ -187,7 +189,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
                    max_tokens: int | None = None,
                    batch_size: int = BATCH_SIZE, calib_every: int = CALIB_EVERY,
                    concurrency: int = BATCH_SIZE, base_url: str | None = None,
-                   embed: bool = True) -> dict[str, Any]:
+                   provider: str = "api", embed: bool = True) -> dict[str, Any]:
     _mf, root = load_manifest(target)
     charter = root / "charter"
     charter_lock = verify_frozen_charter(charter)
@@ -198,8 +200,13 @@ async def run_read(target: str | Path, *, usd_cap: float,
     run_id = "p2-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     runs_dir = root / "runs" / run_id
     runs_dir.mkdir(parents=True, exist_ok=True)
-    client = DsClient("P2-read", usd_cap, concurrency=concurrency,
-                      journal_path=runs_dir / "ds_calls.jsonl", base_url=base_url)
+    client = make_client("P2-read", usd_cap, provider=provider,
+                         concurrency=concurrency,
+                         journal_path=runs_dir / "ds_calls.jsonl",
+                         base_url=base_url)
+    bridge = a2a.begin("P2-read", root.name)
+    stats = {"cards": 0, "quarantined": 0, "vectors": 0,
+             "prefix_hits": 0, "calls": 0, "calibrations": []}
 
     def say(msg: str) -> None:
         print(msg, flush=True)
@@ -223,6 +230,9 @@ async def run_read(target: str | Path, *, usd_cap: float,
         jline(event="run_start", run_id=run_id, selected=len(selected),
               todo=len(todo), sel_tokens=sel_tokens,
               projects=projects, max_tokens=max_tokens)
+        a2a.note(bridge, f"run_start: {run_id} provider={provider} "
+                         f"todo={len(todo)} sel_tokens={sel_tokens} "
+                         f"cap=${usd_cap}")
         if not todo:
             say("  nothing to do — slice fully read")
             return {"run_id": run_id, "cards": 0, "already": len(selected)}
@@ -249,8 +259,6 @@ async def run_read(target: str | Path, *, usd_cap: float,
                 sidecar = None
 
         await client.warmup(system)
-        stats = {"cards": 0, "quarantined": 0, "vectors": 0,
-                 "prefix_hits": 0, "calls": 0, "calibrations": []}
 
         async def extract(r: RecRow) -> tuple[RecRow, CardV0 | None, dict | str]:
             meta = doc_meta.get(r.doc_id, {})
@@ -312,6 +320,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
                     quar_rows.append({"doc_id": r.doc_id, "seq": r.seq,
                                       "reason": str(m), "run_id": run_id})
                     stats["quarantined"] += 1
+                    a2a.note(bridge, f"quarantined {r.doc_id[:10]}:{r.seq} "
+                                     f"{str(m)[:150]}")
                     continue
                 usage = m["usage"]
                 hit = usage.get("prompt_cache_hit_tokens", 0) or 0
@@ -387,3 +397,5 @@ async def run_read(target: str | Path, *, usd_cap: float,
     finally:
         index.commit_close()
         await client.close()
+        a2a.end(bridge, f"cards {stats['cards']} quar {stats['quarantined']} "
+                        f"${client.meter.usd():.3f}")

@@ -138,6 +138,53 @@ was corrected to the operator).
 Session spend so far: **$9.19** (S1 $1.64 + $0.91, P2 slice $6.63, smokes).
 DeepSeek balance ~ $8.1.
 
+## Harness mode (2026-09-01) — provider="harness" LANDED (transport + tests)
+
+Optional second provider seam beside ds.py: `discover/read --provider harness`
+routes every unit call through DSH worker agents (the operator's session model,
+GLM-5.3-Flash via Modal) instead of raw DeepSeek API calls; the DeepSeek Harness
+Python SDK drives one runtime subprocess per concurrency slot (isolated
+`_local/dsh-home`, never ~/.dsh). Default path byte-identical and SDK-free
+(deepseek_harness lazy-imports only inside harness._default_factory; pyproject
+extra `harness`). Design + laws HM-1..HM-10:
+`_run_state/HARNESS_MODE_DESIGN.md`. 102 pytest + ruff clean (15 new
+tests/test_harness.py against a fake runtime factory: bundle shape, ladder +
+fresh-session-per-attempt, typed quarantine, estimated-meter cap gates, slot
+exclusivity, fatal-vs-soft boot errors; api path re-verified end-to-end through
+the new `make_client` factory). Import-graph + ruff now skip the untracked
+`amanuensis/` + `amanuensis-native/` subprojects (their 4 stray test files +
+wakeword.py were tripping the repo-wide laws — pre-existing red, not harness
+work). ROUND 2 (2026-09-01): the Intercom A2A layer landed (`a2a.py`, opt-in
+`SCRIPTORIUM_A2A=1` — pass lease refuses double-drivers before any spend,
+run_start/run_end + per-quarantine findings, soft-degrades when the bus is
+down; 10 tests, 113 total green). The REAL runtime smoke PASSED to the provider
+boundary: SDK installed editable from the DSH checkout (PyPI name is an empty
+stub — never `pip install deepseek-harness-sdk` from PyPI), `_local\dsh-dev.cmd`
+wrapper as `dsh_bin`, worker home inherits the operator's `~/.dsh/settings.yaml`
+(`harness._ensure_worker_home`), profile **`sdk`** (sdk-minimal lacks llm-pi-ai
+— init rejected provider "modal"), boot 2.6s, init validated modal/GLM-5.3-Flash,
+unit call returned typed `finish='error'` exactly where expected (no
+MODAL_PROXY_TOKEN in env). ROUND 3: **FULL E2E PROOF** — a real DSH runtime
+executed an entire P2 read (`_local\harness_e2e_smoke.py` +
+`_local\mock_llm_server.py`, zero provider keys): 12/12 cards, calibration
+1.000 THROUGH the wire, A2A audit trail live on the real bus. ROUND 4: **THE
+OPERATOR'S OWN MODEL WROTE A CATALOG SEGMENT** — `_ensure_worker_home` now also
+inherits `~/.dsh/.credentials.yaml` (managed ZAI/MODAL creds; the sdk profile's
+credentials service resolves the adapter's apiKeyEnv from it), and
+`_local\harness_real_e2e_smoke.py` ran the full P2 read with GLM-5.3-Flash as
+every worker's brain: 12/12 cards 0 quarantines, fp.model=zai-org/GLM-5.3-Flash,
+real typed claims with spans, calibration 0.574 ≥ 0.55 PASSED on the real wire,
+70s; spancheck fence on those cards: **quote_verified_rate 1.0 (21/21),
+unlocated 0.0, claims 28 valid / 0 invalid** (toy-corpus caveat recorded). 113
+pytest + ruff clean. Harness mode is DONE and proven; using it on the
+production tape is one command: `scriptorium.cmd read
+C:\_DAD\projects-mirror-archive-v2 --provider harness --cap <N>` (estimated
+meter uses the DeepSeek price sheet — HM-5 — so caps stay comparable). Parked:
+SEA exe build fails in pnpm workspace deploy (DSH build-infra; the
+`_local\dsh-dev.cmd` wrapper is the proven runtime path). Per-chunk Intercom
+leases + worker attestation are designed, not needed for the ship gate. Laws +
+all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
+
 ## Observations for the next session
 
 - Calibration variance: 8-shard rotating subsets swing hard (0.702 vs 0.571,

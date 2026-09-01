@@ -47,3 +47,16 @@ usage panel $17.31 balance / $2.68 lifetime, pricing docs page):
    tool_result, so this coding archive's actual code/command-outputs live only
    in v1 (raw negatives). A future v3 could keep tool_use code blocks if the
    work-product layer is ever wanted.
+
+2026-09-01, operator, via chat (Claude Code session, dual-mode handoff):
+
+7. **Survey docs stay local.** `_run_state/NEIGHBOR_ORGANS.md` + `_run_state/survey/*`
+   (the 20-target machine survey) are deliberately NOT committed/pushed: they
+   summarize the designs of the operator's other, unpublished repos (Intercom,
+   KEEL, hypercell, everywhen, the DSH harness). They remain on-disk required
+   reading for sessions on this box; the public scriptorium repo carries only
+   scriptorium's own work. (Asked and answered explicitly; option "survey stays
+   local" chosen over "push everything".)
+8. **Two harnesses only.** The only agent harnesses in use or planned on this
+   machine are DSH (C:\deepseek-harness-master) and Claude Code. Integration
+   work (worker seams, wake adapters, A2A identity) targets exactly these two.
