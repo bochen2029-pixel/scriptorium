@@ -147,6 +147,42 @@ was corrected to the operator).
 Session spend so far: **$9.19** (S1 $1.64 + $0.91, P2 slice $6.63, smokes).
 DeepSeek balance ~ $8.1.
 
+## Session log 2026-09-01 (Claude Code) — what changed, in one place
+
+Suite went 113 → **133 pytest + ruff clean**; every item below is committed and
+pushed (survey docs stay local per RATIFIED 7).
+
+**Dual mode finished and then honestly qualified** (rounds 5-9, full evidence
+in HARNESS_MODE_DESIGN.md): all four designed A2A increments built (per-chunk
+leases, batch findings, artifact-pin attestation, persona patch); three real
+defects found by running it (silently-dropped `system` role on the modal path,
+process-fresh session ids colliding with the persistent session store,
+composed-prompt pollution); then the verdict — the LANE works, GLM-5.3-Flash
+as the worker model does not meet the charter's bar.
+
+**Fence became a producer, not just a meter.** `spancheck.locate` /
+`derive_spans` write `catalog/cards/spans.jsonl` — code-derived spans for
+every LOCATED quote, so the model's 0%-usable offsets are fully replaced and
+an unlocated quote structurally cannot render as verbatim. Measured on the v2
+catalog: **245/281 = 87.19% located**, exactly matching the fence's verified
+rate. New `scriptorium.cmd fence <root> [--derive]` subcommand. Also fixed two
+real fence defects: a card whose chunk isn't in this Tape was scoring as
+fabrication (now `cards_unfetchable`, excluded from rates), and correct
+offsets with a padded quote were downgraded from exact.
+
+**S1 stability falsifier fixed** (RATIFIED 9, flagged for review): it compared
+an absolute gap to 0.05 while sampling error shrinks as 1/sqrt(n), so it was
+silently a corpus-SIZE test that refused small archives for noise. Now
+`max(0.05, 2 x paired SE)`; both frozen charters keep their verdicts, a
+genuinely unstable run (|t|=2.25) is still refused.
+
+**Smaller things:** `--retry-quarantined` + `--max-out-tokens` (the parked
+observations), `--concurrency`, charter baseline printed from charter.yaml,
+CALIB_SHARDS 8→16, provider failure messages surfaced into the journal
+(`finish_failure`) with ladder backoff, honest driver identity on the bus,
+README brought to 2026-09-01 with a dual-mode section, collection #2 tape
+built (56 files / 110,869 tokens, 99.99% reconciled).
+
 ## Dual mode round 5-6 (2026-09-01, Claude Code session) — A2A v2 built; persona hardened by live failure
 
 All prior harness work committed + pushed (71ea18f); this session's increments
@@ -266,41 +302,35 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
 
 ## BLOCKED
 
-- **Harness lane (v2 FERRYMAN slice + any harness read): the Modal plan
-  window.** Mid-session 2026-09-01 every worker call started returning
-  `429 "Plan credits cannot be applied to shared endpoint usage. Add a payment
-  method or increase your spend limit"`. `_local/ferryman_watcher.sh` retries
-  the slice every 20 min for ~5.3h and needs nothing if the window refreshes
-  on its own. IF the 429 persists past that: it is a Modal plan/billing state
-  only the operator can change (add payment method / raise spend limit), or
-  the operator may bless routing workers via the ZAI credentials instead
-  (`SCRIPTORIUM_HARNESS_PROVIDER`/`MODEL` env — different pocket, so it stays
-  the operator's call).
-- **API lane full-corpus P2: operator top-up** (~$32; balance measured $15.15
-  on 2026-09-01 — covers roughly half; a half-corpus api read is possible
-  today if the operator prefers spend over waiting on Modal).
-- Nothing else.
+- **Full-corpus P2 (api lane): operator top-up** (~$32; balance measured
+  $15.15 on 2026-09-01 — covers roughly half; a half-corpus read is possible
+  today if the operator prefers). This is the ONLY path to the full catalog
+  now: the harness lane's worker model failed qualification (round-9 verdict
+  — 0.26-0.37 vs the charter, 0.497 self-agreement, bar 0.55; zero cards
+  shipped, $0 spent). The Modal 429 window from earlier resolved on its own
+  and is NOT the blocker; the model's reproducibility is.
+- Nothing else. (Collection #2 chain was in flight at write time — see
+  `_local/collection2_chain.log`.)
 
 ## Next session's first move
 
-Read this file + RATIFIED.md. Then check
-`_local/ferryman_v2_harness_watch.log` (tail):
-- **SUCCESS** → run `spancheck.py` on the new harness cards (the run id is in
-  the log), record fence beside api numbers here, and compare cards/fence vs
-  v1-FERRYMAN-api 71.5% and v2-OUTREACH-api 87.2%. A clean slice qualifies
-  the harness lane; the FULL harness read stays the operator's call.
-- **still retrying** → leave it; do other work.
-- **STOP-DRIFT** → GLM couldn't hit the v2 calibration bar with the clean
-  system role: diagnose with the run journal (`finish_failure`, response
-  shapes) + session store; consider effort=medium for calibration, or accept
-  api-lane-only production.
-- **GAVE UP / STOP-*** → see BLOCKED.
+Read this file + RATIFIED.md (items 7-9 are new). The harness qualification
+question is CLOSED (round-9 verdict above; the watcher fork in older notes is
+obsolete — every calibration attempt was refused checkpoint-clean and the
+evidence is in HARNESS_MODE_DESIGN.md). Then:
 
-If the operator topped up the DeepSeek balance: launch the full v2 api read
-(command in TL;DR; CALIB_SHARDS now defaults 16). When a full read finishes:
-`spancheck.py` for the whole-catalog fence rate, then S3 (`map` + `reread` to
-convergence), then S4 (`synthesize` + `certify` — the certificate is the
-product).
+1. Check collection #2 (`_local/collection2_chain.log`): if the chain
+   finished, its charter/read/fence numbers belong in this file and the S2
+   gate's "second collection" item is DONE. If freeze refused again under the
+   noise-aware rule, that is a REAL instability — diagnose, don't loosen.
+2. If the operator topped up the DeepSeek balance: launch the full v2 api
+   read (command in TL;DR; CALIB_SHARDS defaults 16 now). When it finishes:
+   `scriptorium.cmd fence C:\_DAD\projects-mirror-archive-v2 --derive` for
+   the whole-catalog fence rate + derived spans, then S3 (`map` + `reread`),
+   then S4 (`synthesize` + `certify` — the certificate is the product).
+3. If a stronger DSH worker model appears: re-run the FERRYMAN qualification
+   slice with `SCRIPTORIUM_HARNESS_MODEL=<model>` — one command, ~5 min, $0;
+   the calibration gate gives the verdict.
 
 Span fence-check (spancheck.py) is BUILT and is the S2 gate's fence item;
 whole-corpus rate prints after the full read. Exact-offset is 0% on both tapes
