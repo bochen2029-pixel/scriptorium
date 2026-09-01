@@ -213,7 +213,9 @@ def main(argv: list[str] | None = None) -> int:
                         ("status", "tape state, last reconciliation + census"),
                         ("discover", "P1: sample the Tape, propose the charter + goldens"),
                         ("freeze", "verify the S1 falsifier, fingerprint the charter"),
-                        ("read", "P2: the first reading — cards under the frozen charter")):
+                        ("read", "P2: the first reading — cards under the frozen charter"),
+                        ("fence", "span fence over the catalog (deterministic, "
+                                  "no LLM); --derive writes code-located spans")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("target", help="archive root dir or manifest path")
         if name == "intake" or name == "resume":
@@ -256,6 +258,11 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--max-out-tokens", type=int, default=None,
                            help="per-card output budget (default 6000; raise "
                                 "for dense chunks that quarantined)")
+        if name == "fence":
+            p.add_argument("--derive", action="store_true",
+                           help="also write catalog/cards/spans.jsonl — "
+                                "code-derived spans for every LOCATED quote "
+                                "(model offsets are never trusted)")
 
     for name in RUNG_STUBS:
         sub.add_parser(name, help=f"[{RUNG_STUBS[name][0]}] {RUNG_STUBS[name][1]}")
@@ -293,6 +300,17 @@ def main(argv: list[str] | None = None) -> int:
             embed=not args.no_embed, concurrency=args.concurrency,
             retry_quarantined=args.retry_quarantined,
             out_tokens=args.max_out_tokens or OUT_TOKENS))
+        return 0
+    if args.cmd == "fence":
+        import json as _json
+
+        from manifest import load_manifest
+        from spancheck import derive_spans, fence_check
+        _mf, root = load_manifest(args.target)
+        rep = fence_check(root)
+        if args.derive:
+            rep["derived"] = derive_spans(root)
+        print(_json.dumps(rep, ensure_ascii=False, indent=1))
         return 0
     rung, what = RUNG_STUBS[args.cmd]
     print(f"`{args.cmd}` is rung {rung} ({what}).\n"
