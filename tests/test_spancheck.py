@@ -115,3 +115,16 @@ def test_unfetchable_chunk_is_not_fabrication():
     assert rep["quotes"] == 1 and rep["exact"] == 1
     assert rep["miss"] == 0                        # the ghost never counted
     assert rep["quote_verified_rate"] == 1.0
+
+
+def test_keyed_row_without_a_card_is_skipped_not_fatal():
+    arch = fresh_dir("spancheck-nocard")
+    make_catalog(arch, quotes=[{"text": "The negatives are forever.",
+                                "start": 0, "end": 26}])
+    cards_p = arch / "catalog" / "cards" / "cards.jsonl"
+    with open(cards_p, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"doc_id": "d" + "0" * 31, "seq": 0,
+                            "note": "hand repair, no card"}) + "\n")
+    rep = fence_check(arch)
+    assert rep["cards"] == 1 and rep["exact"] == 1     # the real card only
+    assert derive_spans(arch)["located"] == 1

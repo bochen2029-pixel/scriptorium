@@ -35,7 +35,6 @@ import asyncio
 import fnmatch
 import json
 import os
-import re
 import sqlite3
 import struct
 import time
@@ -50,7 +49,7 @@ from discover import SCORING_BAR, RecRow, compare_cards, scan_tape
 from ds import CapExceeded, UnitQuarantined
 from harness import make_client
 from local import EmbedSidecar
-from manifest import load_manifest
+from manifest import ManifestError, load_manifest, parse_yamlite
 from organs import CODE_DIR
 from textindex import TextReader
 from textnorm import estimate_tokens
@@ -81,6 +80,10 @@ OUT_TOKENS = 6000         # per-card output budget; dense chunks that exhaust
 # the same runs realized: 46% (v2) / 53% (repo).
 EST_OUT_TOKENS = 2600
 EST_CACHE_HIT_RATE = 0.46
+EMBED_CHARS = 8000        # chars of a chunk the embedder sees (one definition
+                          # for the live read AND the backfill — vectors in one
+                          # index must all be made the same way)
+EMBED_GROUP = 16
 
 
 def _refcard_prompt() -> str:
@@ -89,17 +92,15 @@ def _refcard_prompt() -> str:
 
 def _charter_baseline(charter: Path) -> float | None:
     """scoring.runs[-1] from charter.yaml — the charter's own scored quality,
-    printed beside each calibration mean. Targeted stdlib parse (no YAML dep);
-    scoring lives in charter.yaml, not charter.lock."""
+    printed beside each calibration mean. charter.yaml is written by dump_yaml
+    in the yamlite subset and read back by parse_yamlite everywhere else
+    (run_freeze), so it is parsed the same way here — never a second parser."""
     try:
-        m = re.search(r"^\s*runs:\s*\[([^\]]*)\]",
-                      (charter / "charter.yaml").read_text("utf-8"), re.M)
-        if m:
-            vals = [float(x) for x in m.group(1).split(",") if x.strip()]
-            return vals[-1] if vals else None
-    except (OSError, ValueError):
-        pass
-    return None
+        meta = parse_yamlite((charter / "charter.yaml").read_text("utf-8"))
+        runs = (meta.get("scoring") or {}).get("runs") or []
+        return float(runs[-1]) if runs else None
+    except (OSError, ValueError, TypeError, AttributeError, ManifestError):
+        return None
 
 
 def verify_frozen_charter(charter: Path) -> dict[str, Any]:
@@ -173,6 +174,30 @@ class CatalogIndex:
 
 # -- the pass --------------------------------------------------------------
 
+def embed_into(index: CatalogIndex, sidecar: EmbedSidecar,
+               texts: dict[tuple[str, int], str],
+               keys: list[tuple[str, int]]) -> tuple[int, str | None]:
+    """THE one way a carded chunk becomes a vector — used by the live read and
+    by `vectors` (backfill) alike, so the two can never drift (truncation,
+    grouping, embedder tag). Skips keys that already have a vector; commits
+    per group. Returns (added, error) — an embed failure stops the group loop
+    and is reported, never half-claimed."""
+    tag = sidecar.fingerprint()["embedder"]
+    need = [k for k in keys if k in texts and not index.has_vector(k)]
+    added = 0
+    for i in range(0, len(need), EMBED_GROUP):
+        grp = need[i:i + EMBED_GROUP]
+        try:
+            vecs = sidecar.embed([texts[k][:EMBED_CHARS] for k in grp])
+        except Exception as e:  # noqa: BLE001 — vectors are backfillable
+            return added, str(e)[:200]
+        for k, v in zip(grp, vecs, strict=True):
+            index.add_vector(k, v, tag)
+            added += 1
+        index.db.commit()
+    return added, None
+
+
 def backfill_vectors(target: str | Path, batch: int = 16) -> dict[str, Any]:
     """Embed carded chunks that have no vector yet — local sidecar only, no
     API, no charter. This exists because "deferred to a rerun" was NOT true:
@@ -210,20 +235,13 @@ def backfill_vectors(target: str | Path, batch: int = 16) -> dict[str, Any]:
         for i in range(0, len(missing), batch):
             grp = missing[i:i + batch]
             texts = reader.get_many(grp)
-            have = [k for k in grp if k in texts]
-            unreadable += len(grp) - len(have)
-            if not have:
-                continue
-            try:
-                vecs = sidecar.embed([texts[k][:8000] for k in have])
-            except Exception as e:  # noqa: BLE001 — report, never half-claim
-                print(f"  embed failed at {i}: {str(e)[:150]} — stopping; "
+            unreadable += len(grp) - len(texts)
+            got, err = embed_into(index, sidecar, texts, grp)
+            added += got
+            if err:
+                print(f"  embed failed at {i}: {err[:150]} — stopping; "
                       f"{added} added so far are committed")
                 break
-            for k, v in zip(have, vecs, strict=True):
-                index.add_vector(k, v, sidecar.fingerprint()["embedder"])
-                added += 1
-            index.db.commit()
             print(f"  {min(i + batch, len(missing))}/{len(missing)} ...",
                   flush=True)
     finally:
@@ -277,10 +295,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
     run_id = "p2-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     runs_dir = root / "runs" / run_id
     runs_dir.mkdir(parents=True, exist_ok=True)
-    client = make_client("P2-read", usd_cap, provider=provider,
-                         concurrency=concurrency,
-                         journal_path=runs_dir / "ds_calls.jsonl",
-                         base_url=base_url, system_persona=system)
+    # The bus first: a lease refusal must exit before anything is built (no
+    # client to close, no persona patch written, nothing to release).
     bridge = a2a.begin("P2-read", root.name)
     stats = {"cards": 0, "quarantined": 0, "vectors": 0, "skipped_leased": 0,
              "prefix_hits": 0, "calls": 0, "calibrations": []}
@@ -292,11 +308,21 @@ async def run_read(target: str | Path, *, usd_cap: float,
         with open(runs_dir / "journal.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(kw, ensure_ascii=False) + "\n")
 
-    store = CardStore(root / "catalog" / "cards")
-    index = CatalogIndex(root / "catalog" / "index.sqlite")
+    # Everything that must be closed or released is created INSIDE the
+    # try, so the finally always sees it (or None).
+    client: Any = None
+    index: CatalogIndex | None = None
     reader: TextReader | None = None
+    keeper = a2a.LeaseKeeper(bridge)
     t0 = time.monotonic()
     try:
+        client = make_client("P2-read", usd_cap, provider=provider,
+                             concurrency=concurrency,
+                             journal_path=runs_dir / "ds_calls.jsonl",
+                             base_url=base_url, system_persona=system)
+        store = CardStore(root / "catalog" / "cards")
+        index = CatalogIndex(root / "catalog" / "index.sqlite")
+        keeper.start()             # renews the pass lease for the whole run
         say(f"[{run_id}] scanning tape ...")
         rows, corpus_tokens, doc_meta = scan_tape(root)
         selected = select_rows(rows, projects, max_tokens)
@@ -313,7 +339,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
                          f"cap=${usd_cap}")
         if not todo:
             say("  nothing to do — slice fully read")
-            return {"run_id": run_id, "cards": 0, "already": len(selected)}
+            return {"run_id": run_id, "cards": 0, "already": len(selected),
+                    "dry_run": dry_run, "would_refuse": False}
 
         est_in = sum(r.tokens for r in todo) + prefix_tokens * len(todo)
         est_out = EST_OUT_TOKENS * len(todo)
@@ -457,7 +484,6 @@ async def run_read(target: str | Path, *, usd_cap: float,
 
         batches = [todo[i:i + batch_size] for i in range(0, len(todo), batch_size)]
         for bi, batch in enumerate(batches):
-            a2a.heartbeat(bridge)      # a multi-hour read must keep its lease
             if bi % calib_every == 0:
                 mean = await calibrate(bi // calib_every)
                 stats["calibrations"].append(round(mean, 4))
@@ -548,20 +574,12 @@ async def run_read(target: str | Path, *, usd_cap: float,
                     index.add_chunk(r, doc_meta.get(r.doc_id, {}),
                                     texts[(r.doc_id, r.seq)])
             if sidecar is not None:
-                need = [r for r, c, _ in results
-                        if c is not None and not index.has_vector((r.doc_id, r.seq))]
-                for k in range(0, len(need), 16):
-                    grp = need[k:k + 16]
-                    try:
-                        vecs = sidecar.embed([texts[(r.doc_id, r.seq)][:8000]
-                                              for r in grp])
-                        for r, v in zip(grp, vecs, strict=True):
-                            index.add_vector((r.doc_id, r.seq), v,
-                                             sidecar.fingerprint()["embedder"])
-                            stats["vectors"] += 1
-                    except Exception as e:  # noqa: BLE001 - vectors are backfillable
-                        jline(event="embed_error", detail=str(e)[:200])
-                        break
+                added, err = embed_into(
+                    index, sidecar, texts,
+                    [(r.doc_id, r.seq) for r, c, _ in results if c is not None])
+                stats["vectors"] += added
+                if err:
+                    jline(event="embed_error", detail=err)
             index.db.commit()
             jline(event="batch_done", batch=bi, cards=stats["cards"],
                   quarantined=stats["quarantined"], usd=round(client.meter.usd(), 4))
@@ -611,11 +629,15 @@ async def run_read(target: str | Path, *, usd_cap: float,
         raise SystemExit(f"PS-8 halt: {e} — cards so far are fsync'd; "
                          f"rerun resumes where this stopped") from e
     finally:
-        index.commit_close()
+        await keeper.stop()
+        if index is not None:
+            index.commit_close()
         if reader is not None:
             reader.close()
-        await client.close()
+        if client is not None:
+            await client.close()
         skipped = stats["skipped_leased"]
+        usd = client.meter.usd() if client is not None else 0.0
         a2a.end(bridge, f"cards {stats['cards']} quar {stats['quarantined']} "
-                        f"${client.meter.usd():.3f}"
+                        f"${usd:.3f}"
                         + (f" skipped_leased {skipped}" if skipped else ""))

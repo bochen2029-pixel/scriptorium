@@ -104,9 +104,11 @@ def search(archive_root: str | Path, terms: str, limit: int = 5,
                 unlocated += 1
                 continue
             start, end, method = found
+            # the report carries the EXACT tape bytes of the derived span —
+            # display normalization happens in render(), never here, so a
+            # --json consumer can trust text == tape[start:end]
             verbatim.append({"start": start, "end": end, "method": method,
-                             "text": _display(text[start:end]),
-                             "speaker": _display(q.get("speaker") or "")[:60]})
+                             "text": text[start:end]})
         hits.append({
             "doc_id": doc_id, "seq": seq, "project": project, "year": year,
             "path": path, "rank": round(rank, 4),
@@ -189,13 +191,13 @@ def summary(archive_root: str | Path, top: int = 12) -> dict[str, Any]:
                     index[name] = None      # absent table: unknown, NOT zero —
                                             # a sentinel must never reach a
                                             # derived number below
-            for doc_id, seq in keys:
-                got = db.execute("SELECT project, year FROM chunks "
-                                 "WHERE doc_id=? AND seq=?",
-                                 (doc_id, seq)).fetchone()
-                if got:
-                    projects[got[0] or "?"] += 1
-                    years[got[1] or 0] += 1
+            # one pass over chunks, filtered by the carded keys — not one
+            # round-trip per card (27,000 of them on the full corpus)
+            for doc_id, seq, project, year in db.execute(
+                    "SELECT doc_id, seq, project, year FROM chunks"):
+                if (doc_id, seq) in keys:
+                    projects[project or "?"] += 1
+                    years[year or 0] += 1
         finally:
             db.close()
 
@@ -269,8 +271,8 @@ def render(report: dict[str, Any]) -> str:
             out.append("    (chunk indexed but not carded — no reading yet)")
             continue
         for v in h["verbatim"]:
-            who = f'{v["speaker"]}: ' if v["speaker"] else ""
-            out.append(f'    VERBATIM [{v["start"]}:{v["end"]}] {who}"{v["text"]}"')
+            out.append(f'    VERBATIM [{v["start"]}:{v["end"]}] '
+                       f'"{_display(v["text"])}"')
         if h["unlocated_quotes"]:
             out.append(f'    ({h["unlocated_quotes"]} quoted line'
                        f'{"" if h["unlocated_quotes"] == 1 else "s"} could NOT be '

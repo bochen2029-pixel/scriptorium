@@ -87,3 +87,22 @@ def test_reader_detects_a_rewritten_file_and_rebuilds(tmp_path):
         assert r.get(row(1)["doc_id"], 0) is None
         assert r.get(row(2)["doc_id"], 0) is not None
         assert r.stats["indexed"] == 1
+
+
+def test_reader_agrees_with_iter_rows_on_a_newline_less_last_line(tmp_path):
+    """A final line without its newline is still a row to iter_rows; the
+    offset reader must serve it too (and re-index it once it is completed)."""
+    arch = fresh_dir("catalog-noeol")
+    p = arch / "catalog" / "cards" / "cards.jsonl"
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps(row(1)) + "\n" + json.dumps(row(2)), "utf-8")   # no \n
+    assert [r["doc_id"][-1] for r in iter_rows(p)] == ["1", "2"]
+    with CardsReader(arch) as r:
+        assert r.get(row(2)["doc_id"], 0) is not None            # served
+        assert r.stats["indexed"] == 2
+    # the writer heals the tail and appends; the completed line re-indexes
+    CardStore(p.parent).append_batch(p, [row(3)])
+    with CardsReader(arch) as r:
+        assert r.stats["indexed"] == 3
+        assert r.get(row(2)["doc_id"], 0)["card"]["topics"] == ["a"]
+        assert r.get(row(3)["doc_id"], 0) is not None

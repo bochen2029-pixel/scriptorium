@@ -264,3 +264,63 @@ def test_heartbeat_never_halts_the_pass(monkeypatch):
     nores = fake_bridge([], [])
     nores.me = "x"
     a2a.heartbeat(nores)                   # joined but uncoordinated -> no-op
+
+
+def test_begin_refusal_leaves_the_bus(monkeypatch):
+    """A refused pass lease must not strand the just-joined agent on the bus."""
+    monkeypatch.setenv("SCRIPTORIUM_A2A", "1")
+    log: list[list[str]] = []
+
+    def runner(argv):
+        log.append(list(argv))
+        return CP(0, "id1\n") if argv[0] == "join" else (
+            CP(3, "", "held") if argv[0] == "claim" else CP(0, "ok", ""))
+
+    monkeypatch.setattr(a2a.IntercomBridge, "_subprocess_runner",
+                        staticmethod(runner))
+    with pytest.raises(SystemExit, match="held by another live driver"):
+        a2a.begin("P2-read", "arch")
+    assert [a[0] for a in log] == ["join", "claim", "leave"]
+
+
+def test_chunk_leases_outlive_a_slow_batch():
+    """Chunk leases are never renewed, so their TTL must cover the slowest
+    batch, not the pass TTL."""
+    assert a2a.CHUNK_LEASE_TTL >= 4 * a2a.LEASE_TTL
+    log: list[list[str]] = []
+    b = fake_bridge([CP(0, "ok", "")], log)
+    b.me = "x"
+    a2a.try_claim(b, "scriptorium:a:p2:d:0")
+    assert log[0][log[0].index("--ttl") + 1] == str(a2a.CHUNK_LEASE_TTL)
+
+
+def test_lease_keeper_renews_in_the_background(monkeypatch):
+    """The keeper renews from a task, so no phase can outlive the TTL between
+    two hand-placed heartbeat calls; stopping it stops the renewals."""
+    import asyncio
+
+    monkeypatch.setattr(a2a, "LEASE_RENEW_AFTER", 0.0)   # renew on every tick
+    log: list[list[str]] = []
+    b = fake_bridge([], log)
+    b.me, b.resource, b.claimed_at = "x", "scriptorium:a:p2-read", 0.0
+
+    async def go():
+        keeper = a2a.LeaseKeeper(b, tick=0.01)
+        keeper.start()
+        await asyncio.sleep(0.15)
+        await keeper.stop()
+        n = len(log)
+        await asyncio.sleep(0.05)
+        return n, len(log)
+
+    n_at_stop, n_after = asyncio.run(go())
+    assert n_at_stop >= 2                       # renewed while running
+    assert all(a[0] == "claim" for a in log)
+    assert n_after == n_at_stop                 # nothing after stop()
+
+    async def inert():
+        k = a2a.LeaseKeeper(None)
+        k.start()
+        await k.stop()
+
+    asyncio.run(inert())                        # disabled bus: pure no-op

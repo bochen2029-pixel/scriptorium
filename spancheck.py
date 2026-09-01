@@ -63,12 +63,19 @@ def locate(text: str, quote: str) -> tuple[int, int, str] | None:
     return (m.start(), m.end(), "whitespace") if m else None
 
 
+def _card_rows(cards_path: Path) -> list[dict[str, Any]]:
+    """Keyed rows that actually carry a card dict. iter_rows only promises
+    doc_id + seq; a foreign or hand-repaired keyed line without a card must
+    be skipped, not crash the whole fence."""
+    return [r for r in iter_rows(cards_path) if isinstance(r.get("card"), dict)]
+
+
 def fence_check(archive_root: str | Path, limit: int | None = None) -> dict[str, Any]:
     root = Path(archive_root)
     cards_path = root / "catalog" / "cards" / "cards.jsonl"
     if not cards_path.exists():
         raise SystemExit(f"no cards at {cards_path} — run `read` first")
-    rows = list(iter_rows(cards_path))
+    rows = _card_rows(cards_path)
     if limit:
         rows = rows[:limit]
     with TextReader(root) as tr:           # seeks through the offset index
@@ -149,7 +156,7 @@ def derive_spans(archive_root: str | Path,
     cards_path = root / "catalog" / "cards" / "cards.jsonl"
     if not cards_path.exists():
         raise SystemExit(f"no cards at {cards_path} — run `read` first")
-    rows = list(iter_rows(cards_path))
+    rows = _card_rows(cards_path)
     with TextReader(root) as tr:
         texts = tr.get_many({(r["doc_id"], r["seq"]) for r in rows})
     out_path = cards_path.parent / out_name

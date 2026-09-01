@@ -28,6 +28,8 @@ overrides the client path (default C:/Intercom/intercom.py).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import subprocess
 import sys
@@ -45,6 +47,13 @@ LEASE_TTL = 900
 # taken by anyone — so a multi-hour read that claims once silently loses its
 # double-driver guard 15 minutes in. Renew at a third of the TTL.
 LEASE_RENEW_AFTER = LEASE_TTL / 3
+# A chunk lease is never renewed (a card is terminal once fsync'd), so its TTL
+# must outlive the SLOWEST batch, not the typical one: a retry-heavy harness
+# batch can run past 15 minutes, and an expired chunk lease lets a co-driver
+# re-claim a chunk still in flight — both then pay for it and both append a
+# card. An hour covers every batch time measured; a crashed claimant blocks a
+# chunk for that hour, and --steal-stale / a later rerun recovers it.
+CHUNK_LEASE_TTL = 3600
 
 
 def _driver_identity() -> tuple[str, str]:
@@ -167,6 +176,10 @@ def begin(pass_name: str, archive_name: str) -> IntercomBridge | None:
         me = bridge.join()
         bridge.claim(resource)
     except A2ARefused as e:
+        # we already joined: leave, or every refused start strands a ghost
+        # agent on the bus for the housekeeper to reap
+        with contextlib.suppress(Exception):
+            bridge.leave()
         raise SystemExit(
             f"A2A: {resource} is held by another live driver — refusing to "
             f"double-run ({e}). If that driver is a ghost, steal the lease "
@@ -208,6 +221,39 @@ def heartbeat(bridge: IntercomBridge | None) -> None:
         _note(f"lease renewal failed ({type(e).__name__}) — continuing")
 
 
+class LeaseKeeper:
+    """Keeps the pass lease alive for a whole pass from a background task, so
+    no phase — a 20-minute golden authoring gather, a retry-heavy batch — can
+    outlive the TTL between two hand-placed heartbeat calls. Ticks every
+    `tick` seconds; `heartbeat` itself only spends a subprocess once
+    LEASE_RENEW_AFTER has elapsed, so the bus sees one renewal per ~5 min.
+    Inert when the bridge is None (A2A disabled)."""
+
+    def __init__(self, bridge: IntercomBridge | None, tick: float = 60.0):
+        self.bridge = bridge
+        self.tick = tick
+        self._task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        if self.bridge is None or self._task is not None:
+            return
+
+        async def loop() -> None:
+            while True:
+                await asyncio.sleep(self.tick)
+                await asyncio.to_thread(heartbeat, self.bridge)
+
+        self._task = asyncio.create_task(loop())
+
+    async def stop(self) -> None:
+        task, self._task = self._task, None
+        if task is None:
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 def note(bridge: IntercomBridge | None, body: str) -> None:
     """Fire-and-forget finding; never raises."""
     if bridge is None:
@@ -234,13 +280,14 @@ def pin(bridge: IntercomBridge | None, path: Any, note_text: str) -> None:
 
 
 def try_claim(bridge: IntercomBridge | None, resource: str,
-              ttl: int = LEASE_TTL) -> bool:
+              ttl: int = CHUNK_LEASE_TTL) -> bool:
     """Chunk-grain lease CAS for multi-DRIVER co-work (design doc, A2A item 2):
     True = ours to do (or the bus is down/disabled — coordination is sugar,
     never a dependency); False = a live driver holds it, skip without writing.
     Never released: a card/quarantine row is terminal once fsync'd (the resume
-    law protects forever after), so the TTL is the janitor for crashed
-    claimants and --steal-stale the manual override."""
+    law protects forever after), so the TTL (CHUNK_LEASE_TTL, sized to outlive
+    the slowest batch) is the janitor for crashed claimants and --steal-stale
+    the manual override."""
     if bridge is None:
         return True
     try:

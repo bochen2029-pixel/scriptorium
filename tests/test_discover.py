@@ -277,3 +277,16 @@ def test_stability_is_noise_aware_not_corpus_size():
     # degenerate: a single shared shard has no variance estimate -> epsilon only
     v = stability_verdict(_rep(0.7, [0.7]), _rep(0.9, [0.9]))
     assert v["paired_n"] == 1 and v["t"] is None and not v["same"]
+
+
+def test_roster_key_never_clobbers_a_different_archive(tmp_path):
+    from discover import _roster_key
+
+    a = tmp_path / "x" / "archive"
+    b = tmp_path / "y" / "archive"
+    slock = {}
+    assert _roster_key(slock, a) == "archive"
+    slock["charters"] = {"archive": {"archive": str(a)}}
+    assert _roster_key(slock, a) == "archive"               # same archive: same row
+    other = _roster_key(slock, b)
+    assert other.startswith("archive@") and len(other) == len("archive@") + 8

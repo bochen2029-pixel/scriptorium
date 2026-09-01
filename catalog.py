@@ -120,8 +120,7 @@ class CardsReader:
                 line = f.readline()        # readline keeps offsets exact
                 if not line:
                     break
-                if not line.endswith(b"\n"):
-                    break                  # torn tail: leave it for next time
+                complete = line.endswith(b"\n")
                 try:
                     rec = json.loads(line.decode("utf-8"))
                     self.db.execute(
@@ -129,7 +128,13 @@ class CardsReader:
                         (rec["doc_id"], rec["seq"], off))
                     added += 1
                 except (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError):
-                    pass                   # foreign line: skip, keep going
+                    pass                   # torn or foreign line: skip
+                if not complete:
+                    # A final line without its newline is indexed if it parses
+                    # (iter_rows yields it too — the two parsers must agree)
+                    # but progress stays BEFORE it, so a writer completing or
+                    # healing that line gets it re-indexed next time.
+                    break
                 off += len(line)
         self.db.execute("INSERT OR REPLACE INTO progress VALUES(1,?,?)", (off, size))
         self.db.commit()

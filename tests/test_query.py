@@ -189,3 +189,18 @@ def test_fts_syntax_in_plain_terms_falls_back_to_a_literal_phrase():
     # never a crash — the typed "bad query" refusal is defensive depth only
     lone = search(arch, '"')
     assert lone["matched_as"] == "phrase" and lone["n"] == 0
+
+
+def test_report_keeps_exact_tape_bytes_and_render_normalizes():
+    """--json consumers must get text == tape[start:end]; only render()
+    collapses whitespace and strips control bytes for the console."""
+    rep = {"terms": "x", "matched_as": "expression", "n": 1, "hits": [{
+        "doc_id": "d" * 32, "seq": 0, "project": "P", "year": 2026,
+        "path": "a.md", "rank": -1.0, "snippet": "s", "carded": True,
+        "verbatim": [{"start": 0, "end": 11, "method": "find",
+                      "text": "one\ntwo\x1b[0m"}],
+        "unlocated_quotes": 0,
+        "reading": {"topics": [], "entities": [], "claims": []}}]}
+    out = render(rep)
+    assert 'VERBATIM [0:11] "one two"' in out           # normalized for display
+    assert rep["hits"][0]["verbatim"][0]["text"] == "one\ntwo\x1b[0m"   # untouched

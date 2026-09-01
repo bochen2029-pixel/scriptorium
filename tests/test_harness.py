@@ -585,10 +585,7 @@ def test_credentials_ride_in_the_runtime_env_never_on_disk(tmp_path, monkeypatch
     (fake_home / ".dsh" / ".credentials.yaml").write_text(
         "refs:\n  MODAL_PROXY_TOKEN: from-store\n  ZAI_API_KEY: also-store\n",
         encoding="utf-8")
-    monkeypatch.setattr(harness, "CREDENTIALS_PATH",
-                        fake_home / ".dsh" / ".credentials.yaml")
-    monkeypatch.setattr(harness._credential_refs, "__defaults__",
-                        (fake_home / ".dsh" / ".credentials.yaml",))
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)   # resolved at call time
     monkeypatch.setenv("ZAI_API_KEY", "from-process-env")   # env wins
     monkeypatch.delenv("MODAL_PROXY_TOKEN", raising=False)
 

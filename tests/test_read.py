@@ -290,3 +290,11 @@ def test_dry_run_reports_a_cap_refusal_instead_of_performing_it(stubs):
     assert read_cards(arch) == []
     with pytest.raises(SystemExit, match="PS-8 halt"):
         asyncio.run(run_read(arch, usd_cap=0.000001, base_url=stubs, batch_size=4))
+
+
+def test_dry_run_on_a_fully_read_slice_keeps_its_shape(stubs):
+    arch = frozen_mini(stubs)
+    asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    rep = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, dry_run=True))
+    assert rep["dry_run"] is True and rep["would_refuse"] is False
+    assert rep["cards"] == 0 and rep["already"] == 12

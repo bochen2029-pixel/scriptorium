@@ -352,11 +352,14 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
     run_id = "p1-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     runs_dir = root / "runs" / run_id
     runs_dir.mkdir(parents=True, exist_ok=True)
+    # The bus first: a lease refusal exits before anything is built.
+    bridge = a2a.begin("P1-discover", root.name)
     client = make_client("P1-discover", usd_cap, provider=provider,
                          concurrency=concurrency,
                          journal_path=runs_dir / "ds_calls.jsonl",
                          base_url=base_url)
-    bridge = a2a.begin("P1-discover", root.name)
+    keeper = a2a.LeaseKeeper(bridge)       # renews the pass lease for the
+    keeper.start()                         # whole pass, inside every phase
     t0 = time.monotonic()
 
     def say(msg: str) -> None:
@@ -460,7 +463,6 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         say("  charter drafts written (ontology.yaml, rubric_P2.md, prior.md)")
 
         # -- golden shards ---------------------------------------------------
-        a2a.heartbeat(bridge)          # phases run for minutes each
         say(f"  authoring {len(shard_rows)} golden shards "
             f"({min(defects_n, len(shard_rows))} with planted defects) ...")
         refcard_sys = rubric_out.rubric_md + "\n\n" + _prompt("p1_refcard_v0")
@@ -507,7 +509,6 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         say(f"  goldens: {len(shards)} shards written, {n_defects} defective; "
             f"meter ${client.meter.usd():.3f}, hit-rate {client.meter.hit_rate():.0%}")
 
-        a2a.heartbeat(bridge)
         # -- golden syntheses ------------------------------------------------
         syn_dir = charter / "goldens" / "syntheses"
         syn_dir.mkdir(parents=True, exist_ok=True)
@@ -545,7 +546,6 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
         means = []
         reps = []
         for n in (1, 2):
-            a2a.heartbeat(bridge)
             rep = await _score_once(client, shards, refcard_sys, say, n)
             means.append(rep["mean"])
             reps.append(rep)
@@ -588,6 +588,7 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
             f"charter PROPOSED at {charter}")
         return meta
     finally:
+        await keeper.stop()
         await client.close()
         a2a.end(bridge, f"${client.meter.usd():.3f} spent")
 
@@ -635,6 +636,19 @@ async def _rescore(client: DsClient, root: Path, charter: Path, say) -> dict[str
 CHARTER_CORE = ("ontology.yaml", "rubric_P2.md", "prior.md", "charter.yaml")
 
 
+def _roster_key(slock: dict[str, Any], root: Path) -> str:
+    """The roster row name for an archive: its folder name, unless another
+    archive already holds that name — then name@<8 hex of the full path>, so
+    two archives whose folders happen to share a basename can never
+    overwrite each other's frozen record."""
+    rows = slock.get("charters") or {}
+    key = root.name
+    held = rows.get(key)
+    if held and held.get("archive") not in (None, str(root)):
+        key = f"{root.name}@{blake2b128_hex(str(root).encode('utf-8'))[:8]}"
+    return key
+
+
 def run_freeze(target: str | Path) -> dict[str, Any]:
     _mf, root = load_manifest(target)
     charter = root / "charter"
@@ -671,7 +685,7 @@ def run_freeze(target: str | Path) -> dict[str, Any]:
     slock = json.loads(slock_path.read_text("utf-8"))
     # one row per archive: freezes must never overwrite each other's record
     # (the truth stays each archive's own charter.lock; this is the roster)
-    slock.setdefault("charters", {})[root.name] = {
+    slock.setdefault("charters", {})[_roster_key(slock, root)] = {
         "status": "frozen", "archive": str(root),
         "model_fp": meta.get("model_fp"),
         "rubric_v": meta.get("rubric_v"),

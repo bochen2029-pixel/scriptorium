@@ -130,7 +130,8 @@ PERSONA_END = (
 # prompt sections stop polluting the system role (the `tools` SERVICE row
 # stays: agent-loop requires it; disabling it refuses to boot — probed live).
 # Row ids are the DSH checkout's bundle grammar; a rename fails the boot
-# loudly at warmup, and SCRIPTORIUM_HARNESS_INTASK=1 is the kill switch.
+# loudly at warmup, and unsetting SCRIPTORIUM_HARNESS_SYSTEM_ROLE returns to
+# the default in-task contract (patch mode is opt-in).
 WORKER_DISABLED_ROWS = (
     "tool-bash", "tool-fs", "tool-fs-search", "tool-goal", "tool-jobs",
     "tool-pwsh", "tool-ralph", "tool-skill", "tool-str-replace-editor",
@@ -251,16 +252,21 @@ def _default_factory(spec: dict[str, Any]) -> Any:
     return deepseek_harness.DeepSeekHarness(**spec)
 
 
-CREDENTIALS_PATH = Path.home() / ".dsh" / ".credentials.yaml"
+def credentials_path() -> Path:
+    """The harness's managed credential store — resolved at CALL time (never
+    at import), so a relocated home or a test's monkeypatched Path.home()
+    is honoured without touching a function's defaults."""
+    return Path.home() / ".dsh" / ".credentials.yaml"
 
 
-def _credential_refs(path: Path = CREDENTIALS_PATH) -> dict[str, str]:
+def _credential_refs(path: Path | None = None) -> dict[str, str]:
     """The `refs:` block of the harness's managed credential store — the
     named secrets its provider adapters resolve by environment name (e.g.
     MODAL_PROXY_TOKEN, ZAI_API_KEY). Targeted and PyYAML-free: only that
     block, only `KEY: value` lines, quotes stripped. Values exist to be
     placed in a worker subprocess's environment; this module never logs,
     prints, journals or writes them."""
+    path = path or credentials_path()
     if not path.exists():
         return {}
     out: dict[str, str] = {}
