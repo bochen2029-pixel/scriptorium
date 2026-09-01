@@ -1,10 +1,58 @@
 # Harness mode — design (provider="harness")
 
-**Status (2026-09-01, goal round 4): OBJECTIVE COMPLETE — the operator's own session model
-(GLM-5.3-Flash via Modal) wrote an entire catalog segment as DSH worker agents: 12/12 cards,
-calibration 1.000→0.574 (bar 0.55) through the real wire, deterministic fence 100% verified.
-113 pytest + ruff clean.** Companion facts: `_run_state/NEIGHBOR_ORGANS.md` +
-`_run_state/survey/{intercom,dsh-harness}.md`.
+**Status (2026-09-01, round 5): OBJECTIVE COMPLETE + A2A v2 increments BUILT — per-chunk
+leases (multi-driver co-work), batch findings, artifact-pin attestation, and the persona
+patch (frozen prefix as the workers' REAL system role). 124 pytest + ruff clean.**
+Companion facts: `_run_state/NEIGHBOR_ORGANS.md` + `_run_state/survey/{intercom,dsh-harness}.md`.
+
+## Round-5 (Claude Code session): the designed A2A v2 increments, implemented
+
+- **Per-chunk leases (design item 2) — BUILT.** `a2a.try_claim` claims
+  `scriptorium:<archive>:p2:<doc_id>:<seq>` (TTL 900s) per selected chunk before any spend;
+  refusal (exit 3) = a live co-driver owns it → skip WITHOUT writing; any soft bus failure →
+  proceed uncoordinated. Claims run concurrently (`asyncio.to_thread`) so a batch costs ~1-2
+  subprocess latencies of wall-clock, not 48. Chunk leases are NEVER released: a card/quarantine
+  row is terminal once fsync'd (the resume law protects every key forever after), so TTL expiry
+  is the janitor for crashed claimants and `--steal-stale` the manual override. Skips are
+  reported honestly: `stats.skipped_leased`, `leased_elsewhere` journal events, per-driver
+  `coverage_pct` < 100. Integration-proven in `test_read_multi_driver_lease_partition`: one
+  chunk refused → 11 cards + honest coverage; A2A-off resume completes exactly the missing key
+  → 12 unique, zero dupes zero gaps.
+- **Batch findings (design item 3) — BUILT.** `batch_done: <n>/<N> cards C quar Q $USD` per
+  batch, calibration means per round, `OPERATOR ATTENTION calibration_halt: …` on drift halt,
+  `halt usd_cap: …` on cap halt — all `a2a.note` (fire-and-forget, never raises). ~57
+  messages per FERRYMAN-scale run vs 2,683 for card-grain chatter.
+- **Worker attestation (design item 4) — evaluated honestly, card-grain REJECTED, artifact-grain
+  BUILT.** Workers are single-shot calls (HM-8): they cannot post to the bus; "attestation"
+  would be the driver posting 1-3 extra subprocesses per card (~3-8K spawns and 2,683 messages
+  per FERRYMAN-scale run) restating what `cards.jsonl` already is — the terminal fsync'd record
+  carrying model fingerprints. Built instead: **one `pin` of `cards.jsonl` at run end**
+  (`a2a.pin` → intercom `pin --file`, blake2b receipt) — cryptographic attestation of the WHOLE
+  output in a single message, verifiable later with `pin-check`.
+- **Persona patch / system-role fidelity (HM-2 v2) — BUILT.** `make_client(...,
+  system_persona=system)`: a single-prefix pass (P2) promotes the frozen prefix to the workers'
+  REAL system role via a generated Cordis patch-list overlay (`write_persona_patch` →
+  `runs/<run_id>/persona.patch.yml`, kept as run evidence; spec gains `patches=(path,)` which
+  the SDK forwards as `--patch <abs>`). Ground truth verified in the DSH source: patch grammar =
+  bare `- id: system-prompt` row update whose `config` REPLACES the row's config
+  (`{includeHarnessIdentity: false, includeRuntimeContext: false, persona: <json-escaped
+  scalar>}`); `--patch` overlays apply after profile + user layers (last write wins — checked
+  `app-boot`: "bundle layers below, overlays above"); the persona is emitted via `json.dumps`
+  (JSON string = valid YAML double-quoted scalar; no YAML dependency; round-trip unit-tested
+  with quotes/backslashes/newlines/unicode). Tasks in patch mode shrink to discipline + payload
+  + unit line (closest mirror of the API lane's user message; `BOUNDARY`/`PAYLOAD_MARK` gone).
+  Guards: `{{` in a prefix refuses patch mode (dsh-system-prompt templates are strict);
+  `chat()` with a different system than the pinned persona raises (P1 uses FIVE prefixes per
+  pass — induce/merge/rubric/refcard/synthesis — and therefore never sets `system_persona`;
+  the P1 harness lane stays in-task by design); `SCRIPTORIUM_HARNESS_INTASK=1` is the kill
+  switch back to v1 in-task bundles. HM-5 estimation counts persona chars on every call
+  (system role still reaches the model each call — else harness-$ undercounts vs api-$).
+  Journal entries carry `system_role: patch|in-task`.
+- **Driver identity is honest (RATIFIED item 8).** The bus join reports which of the box's two
+  harnesses actually drives: `claude-code` (env marker `CLAUDECODE`, model from
+  `ANTHROPIC_MODEL`) or `dsh`; `SCRIPTORIUM_DRIVER_HARNESS/MODEL` override.
+- Suite: **124 pytest + ruff clean** (11 new: lease semantics, pin, identity, persona patch
+  mode/pinning/kill-switch/braces-refusal/estimator/YAML round-trip, multi-driver run_read).
 
 ## Round-4 evidence (real model, zero mocks in the P2 path)
 
@@ -171,7 +219,7 @@ lazy-imported only when a harness client is constructed).
 - Sessions persist under `_local/dsh-home` (JSONL session store); a harness pass is therefore
   post-mortem auditable in DSH terms (everywhen can index those tapes natively).
 
-## A2A layer (v2, designed — Intercom)
+## A2A layer (v2 — items 2/3/4 BUILT in round 5, see top; original design below)
 
 Wrap each pass in an Intercom run (see survey/intercom.md for the verb contract):
 

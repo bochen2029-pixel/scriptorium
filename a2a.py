@@ -13,6 +13,12 @@ audit-trailed in agent terms:
   provider seam stays coordination-free; this module wraps passes).
 - run_start / run_end / per-quarantine findings (bodies <= 4 KB per the
   Intercom spec), then release + leave in the exit path.
+- per-chunk leases "scriptorium:<archive>:p2:<doc_id>:<seq>" (try_claim) so
+  two drivers can co-work one catalog without dupes; the resume law (skip
+  keys already in cards.jsonl) stays primary — leases only prevent
+  CONCURRENT double-work and are never released (TTL is the janitor).
+- driver identity is honest about which of the box's two harnesses is
+  driving (claude-code or dsh; RATIFIED item 8).
 
 Transport = one fresh subprocess per verb (organ discipline: the bus client
 is a fixed-path tool, never imported). Forward slashes per the QUICKSTART
@@ -33,6 +39,20 @@ from typing import Any
 INTERCOM_PY = "C:/Intercom/intercom.py"
 BODY_CAP = 4000
 LEASE_TTL = 900
+
+
+def _driver_identity() -> tuple[str, str]:
+    """Which of the box's TWO harnesses is driving (RATIFIED item 8: only DSH
+    and Claude Code exist here). Env overrides win; else the Claude Code env
+    marker decides; else dsh."""
+    h = os.environ.get("SCRIPTORIUM_DRIVER_HARNESS", "").strip()
+    m = os.environ.get("SCRIPTORIUM_DRIVER_MODEL", "").strip()
+    if not h:
+        h = "claude-code" if os.environ.get("CLAUDECODE") else "dsh"
+    if not m:
+        m = ((os.environ.get("ANTHROPIC_MODEL", "").strip() or "claude")
+             if h == "claude-code" else "dsh")
+    return h, m
 
 
 class A2ARefused(Exception):
@@ -56,12 +76,14 @@ class IntercomBridge:
     I/O point (tests inject a fake; production runs intercom.py)."""
 
     def __init__(self, project: str, lane: str, cli: str = INTERCOM_PY,
-                 model: str = "dsh",
+                 harness_name: str | None = None, model: str | None = None,
                  runner: Callable[[list[str]], Any] | None = None):
         self.project = project
         self.lane = lane
         self.cli = cli
-        self.model = model
+        default_h, default_m = _driver_identity()
+        self.harness_name = harness_name or default_h
+        self.model = model or default_m
         self._runner = runner or self._subprocess_runner
         self.me: str | None = None
         self.resource: str | None = None
@@ -92,7 +114,8 @@ class IntercomBridge:
         return self.me
 
     def join(self) -> str:
-        out = self._cmd("join", "--harness", "dsh", "--model", self.model,
+        out = self._cmd("join", "--harness", self.harness_name,
+                        "--model", self.model,
                         "--project", self.project, "--kind", "session",
                         "--lane", self.lane)
         me = out.splitlines()[-1].strip() if out else ""
@@ -108,6 +131,10 @@ class IntercomBridge:
     def claim(self, resource: str, ttl: int = LEASE_TTL) -> None:
         self._cmd("claim", "--me", self._joined(), "--resource", resource,
                   "--ttl", str(ttl))
+
+    def pin_file(self, path: str, note_text: str) -> None:
+        self._cmd("pin", "--me", self._joined(), "--file",
+                  path.replace("\\", "/"), note_text[:BODY_CAP])
 
     def release(self, resource: str) -> None:
         self._cmd("release", "--me", self._joined(), "--resource", resource)
@@ -155,6 +182,42 @@ def note(bridge: IntercomBridge | None, body: str) -> None:
         bridge.say(body)
     except Exception as e:  # noqa: BLE001 — coordination must not fail a pass
         _note(f"say failed ({type(e).__name__}) — continuing")
+
+
+def pin(bridge: IntercomBridge | None, path: Any, note_text: str) -> None:
+    """Artifact-grain attestation (the honest resolution of 'worker
+    attestation'): ONE pin at run end records the catalog's blake2b on the bus
+    — a cryptographic receipt for the whole output. Card-grain attestation was
+    evaluated and rejected: workers are single-shot calls (HM-8) so the driver
+    would post ~1-3 subprocesses per card of pure chatter restating what
+    cards.jsonl already is — the terminal, fsync'd record. Never raises."""
+    if bridge is None:
+        return
+    try:
+        bridge.pin_file(str(path), note_text)
+    except Exception as e:  # noqa: BLE001 — coordination must not fail a pass
+        _note(f"pin failed ({type(e).__name__}) — continuing")
+
+
+def try_claim(bridge: IntercomBridge | None, resource: str,
+              ttl: int = LEASE_TTL) -> bool:
+    """Chunk-grain lease CAS for multi-DRIVER co-work (design doc, A2A item 2):
+    True = ours to do (or the bus is down/disabled — coordination is sugar,
+    never a dependency); False = a live driver holds it, skip without writing.
+    Never released: a card/quarantine row is terminal once fsync'd (the resume
+    law protects forever after), so the TTL is the janitor for crashed
+    claimants and --steal-stale the manual override."""
+    if bridge is None:
+        return True
+    try:
+        bridge.claim(resource, ttl)
+        return True
+    except A2ARefused:
+        return False
+    except Exception as e:  # noqa: BLE001 — soft failures degrade to no-op
+        _note(f"claim soft-failed ({type(e).__name__}: {e}) — proceeding "
+              f"uncoordinated")
+        return True
 
 
 def end(bridge: IntercomBridge | None, summary: str) -> None:

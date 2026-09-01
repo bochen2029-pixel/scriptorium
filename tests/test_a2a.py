@@ -135,3 +135,65 @@ def test_begin_cli_missing_disables(monkeypatch):
     monkeypatch.setenv("SCRIPTORIUM_A2A", "1")
     monkeypatch.setenv("INTERCOM_PY", "C:/definitely/missing/intercom.py")
     assert a2a.begin("P", "a") is None
+
+
+def test_driver_identity_two_harnesses(monkeypatch):
+    """RATIFIED item 8: the driver is claude-code or dsh, honestly reported."""
+    for var in ("SCRIPTORIUM_DRIVER_HARNESS", "SCRIPTORIUM_DRIVER_MODEL",
+                "CLAUDECODE", "ANTHROPIC_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    assert a2a._driver_identity() == ("dsh", "dsh")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert a2a._driver_identity() == ("claude-code", "claude")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-fable-5")
+    assert a2a._driver_identity() == ("claude-code", "claude-fable-5")
+    monkeypatch.setenv("SCRIPTORIUM_DRIVER_HARNESS", "dsh")
+    monkeypatch.setenv("SCRIPTORIUM_DRIVER_MODEL", "glm-5.3-flash")
+    assert a2a._driver_identity() == ("dsh", "glm-5.3-flash")
+
+
+def test_join_carries_driver_identity(monkeypatch):
+    monkeypatch.setenv("SCRIPTORIUM_DRIVER_HARNESS", "claude-code")
+    monkeypatch.setenv("SCRIPTORIUM_DRIVER_MODEL", "claude-fable-5")
+    log: list[list[str]] = []
+    b = fake_bridge([CP(0, "ab12cd34\n")], log)
+    b.join()
+    argv = log[0]
+    assert argv[argv.index("--harness") + 1] == "claude-code"
+    assert argv[argv.index("--model") + 1] == "claude-fable-5"
+
+
+def test_pin_artifact_attestation():
+    log: list[list[str]] = []
+    b = fake_bridge([CP(0, "pinned", "")], log)
+    b.me = "x"
+    a2a.pin(b, "C:\\arch\\catalog\\cards\\cards.jsonl", "receipt")
+    argv = log[0]
+    assert argv[0] == "pin"
+    assert argv[argv.index("--file") + 1] == "C:/arch/catalog/cards/cards.jsonl"
+    assert argv[-1] == "receipt"
+
+    a2a.pin(None, "x", "no-op")                      # disabled: pure no-op
+    b2 = fake_bridge([CP(1, "", "dead")], [])
+    b2.me = "x"
+    a2a.pin(b2, "y", "soft failure never raises")
+
+
+def test_try_claim_semantics():
+    """True = ours (or bus down/disabled); False = a live co-driver owns it."""
+    assert a2a.try_claim(None, "r") is True          # disabled: pure no-op
+
+    log: list[list[str]] = []
+    b = fake_bridge([CP(0, "ok", "")], log)
+    b.me = "x"
+    assert a2a.try_claim(b, "scriptorium:a:p2:d1:0") is True
+    assert log[0][0] == "claim"
+    assert log[0][log[0].index("--resource") + 1] == "scriptorium:a:p2:d1:0"
+
+    b2 = fake_bridge([CP(3, "", "held by other")], [])
+    b2.me = "x"
+    assert a2a.try_claim(b2, "r") is False           # refusal: skip, no write
+
+    b3 = fake_bridge([CP(1, "", "bus dead")], [])
+    b3.me = "x"
+    assert a2a.try_claim(b3, "r") is True            # soft failure: proceed

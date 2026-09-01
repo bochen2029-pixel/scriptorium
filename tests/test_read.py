@@ -136,3 +136,47 @@ def test_read_refuses_without_charter(stubs, monkeypatch):
     arch = mini_archive()
     with pytest.raises(SystemExit, match="no frozen charter"):
         asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs))
+
+
+def test_read_multi_driver_lease_partition(stubs, monkeypatch):
+    """A2A chunk leases: a chunk claimed by a live co-driver is skipped without
+    writing anything; the skip is reported honestly; a later resume (the other
+    driver gone) completes the catalog with zero dupes and zero gaps."""
+    from test_a2a import CP
+
+    import a2a
+
+    arch = frozen_mini(stubs)
+    monkeypatch.setenv("SCRIPTORIUM_A2A", "1")
+    lock = threading.Lock()
+    refused: list[str] = []
+
+    def runner(argv):
+        if argv[0] == "join":
+            return CP(0, "drv1\n")
+        if argv[0] == "claim":
+            resource = argv[argv.index("--resource") + 1]
+            if ":p2:" in resource:
+                with lock:                      # exactly one chunk is "theirs"
+                    if not refused:
+                        refused.append(resource)
+                        return CP(3, "", "held by co-driver")
+        return CP(0, "ok", "")
+
+    monkeypatch.setattr(a2a.IntercomBridge, "_subprocess_runner",
+                        staticmethod(runner))
+    r1 = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    assert r1["skipped_leased"] == 1 and r1["cards"] == 11
+    assert len(refused) == 1
+    assert len(read_cards(arch)) == 11
+    assert r1["coverage_pct"] < 100.0           # honest per-driver coverage
+
+    # the co-driver never wrote its card (crashed / was killed): resume with
+    # the bus off picks up exactly the leased-away chunk — the resume law is
+    # primary, leases only prevented CONCURRENT double-work
+    monkeypatch.delenv("SCRIPTORIUM_A2A")
+    r2 = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    assert r2["cards"] == 1
+    cards = read_cards(arch)
+    keys = [(c["doc_id"], c["seq"]) for c in cards]
+    assert len(keys) == len(set(keys)) == 12    # no dupes, no gaps

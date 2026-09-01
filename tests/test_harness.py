@@ -341,6 +341,111 @@ def test_make_client_api_path_returns_dsclient(monkeypatch):
     run(c.close())
 
 
+def test_hm2v2_persona_patch_mode(tmp_path):
+    """system_persona promotes the frozen prefix to the real system role: a
+    Cordis patch file lands beside the journal, the spec carries it, and tasks
+    shrink to discipline + payload + unit line (no duplicated prefix)."""
+    script = [{"content": '{"answer": "ok"}'}]
+    calls, rts = [], []
+    jp = tmp_path / "ds_calls.jsonl"
+    c = client(make_factory(script, calls, rts), journal_path=jp,
+               system_persona="FROZEN SYS PREFIX")
+
+    async def go():
+        await c.chat(system="FROZEN SYS PREFIX", user="PAYLOAD BODY",
+                     tail="\n[id:7]", mode="extract", unit_id="u1",
+                     out_model=TinyOut)
+        await c.close()
+
+    run(go())
+    patch = tmp_path / harness.PERSONA_PATCH_NAME
+    assert patch.exists()
+    body = patch.read_text("utf-8")
+    assert "- id: system-prompt" in body
+    assert "includeHarnessIdentity: false" in body
+    assert "includeRuntimeContext: false" in body
+    assert json.dumps("FROZEN SYS PREFIX") in body
+    assert rts[0].spec["patches"] == (str(patch),)
+    task = calls[0]["task"]
+    assert harness.BOUNDARY not in task and "FROZEN SYS PREFIX" not in task
+    assert harness.PAYLOAD_MARK not in task
+    assert task.startswith("Reply with ONLY one JSON object")
+    assert "PAYLOAD BODY" in task
+    assert task.endswith("[unit: u1; output budget ~4096 tokens]")
+    entry = json.loads(jp.read_text("utf-8").splitlines()[-1])
+    assert entry["system_role"] == "patch"
+
+
+def test_hm2v2_persona_pins_one_prefix_per_pass(tmp_path):
+    calls, rts = [], []
+    c = client(make_factory([], calls, rts),
+               journal_path=tmp_path / "j.jsonl", system_persona="THE PREFIX")
+
+    async def go():
+        with pytest.raises(DsError, match="ONE frozen system prefix"):
+            await c.chat(system="A DIFFERENT PREFIX", user="U", mode="extract",
+                         unit_id="u1", out_model=TinyOut)
+        await c.close()
+
+    run(go())
+    assert calls == []                               # refused before any spend
+
+
+def test_hm2v2_intask_killswitch(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRIPTORIUM_HARNESS_INTASK", "1")
+    script = [{"content": '{"answer": "ok"}'}]
+    calls, rts = [], []
+    jp = tmp_path / "j.jsonl"
+    c = client(make_factory(script, calls, rts), journal_path=jp,
+               system_persona="FROZEN SYS")
+
+    async def go():
+        await c.chat(system="ANY SYS", user="U", mode="extract",
+                     unit_id="u1", out_model=TinyOut)
+        await c.close()
+
+    run(go())
+    assert c.system_role == "in-task"
+    assert "patches" not in rts[0].spec
+    assert harness.BOUNDARY in calls[0]["task"]      # v1 bundle shape intact
+    entry = json.loads(jp.read_text("utf-8").splitlines()[-1])
+    assert entry["system_role"] == "in-task"
+
+
+def test_hm2v2_braced_prefix_refused(tmp_path):
+    with pytest.raises(DsError, match="strict"):
+        client(make_factory([], [], []), journal_path=tmp_path / "j.jsonl",
+               system_persona="prefix with {{template}} braces")
+
+
+def test_hm2v2_estimator_counts_persona(tmp_path):
+    """HM-5: the persona reaches the model as system role every call — the
+    estimated meter must count it or harness-$ undercuts api-$ comparability."""
+    script = [{"content": '{"answer": "ok"}'}]
+    calls, rts = [], []
+    persona = "P" * 400
+    c = client(make_factory(script, calls, rts),
+               journal_path=tmp_path / "j.jsonl", system_persona=persona)
+
+    async def go():
+        await c.chat(system=persona, user="U" * 60, mode="extract",
+                     unit_id="u1", out_model=TinyOut)
+        await c.close()
+
+    run(go())
+    task_len = len(calls[0]["task"])
+    assert c.meter.in_miss == (task_len + len(persona)) // c.chars_per_token
+
+
+def test_write_persona_patch_roundtrip(tmp_path):
+    """Arbitrary rubric text survives the JSON-escaped YAML scalar exactly."""
+    nasty = 'quotes " and \\backslash\\ and\nnewlines\tand tabs — μñicode: 你好'
+    p = harness.write_persona_patch(nasty, tmp_path / "persona.patch.yml")
+    line = next(ln for ln in p.read_text("utf-8").splitlines()
+                if ln.strip().startswith("persona: "))
+    assert json.loads(line.split("persona: ", 1)[1]) == nasty
+
+
 def test_journal_records_estimated_usage(tmp_path):
     script = [{"content": '{"answer": "ok"}'}]
     calls, rts = [], []

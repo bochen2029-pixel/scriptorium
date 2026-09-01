@@ -14,6 +14,11 @@ _run_state/HARNESS_MODE_DESIGN.md. Mirror of ds.py's PS-1..PS-10:
 - HM-2  the contract rides in the task: fresh single-turn session per attempt,
         frozen system prefix at the head of every task behind an explicit
         boundary marker, payload last, unit id + output budget line at the tail.
+        v2 (system_persona): a single-prefix pass (P2) promotes the frozen
+        prefix to the workers' REAL system role via a generated Cordis persona
+        patch (write_persona_patch; --patch overlays win over profile + user
+        layers); tasks then carry only discipline + payload + unit line.
+        SCRIPTORIUM_HARNESS_INTASK=1 is the kill switch back to in-task.
 - HM-3  the PS-3 ladder shape: fresh-session extract attempts x2 -> rescue x1
         -> UnitQuarantined (typed, metered, never dropped).
 - HM-4  consistency is enforced downstream (frozen-charter verify, calibration
@@ -75,25 +80,65 @@ def _env(name: str, default: str) -> str:
 
 
 def build_task(system: str, user: str, tail: str, *, mode: str, unit_id: str,
-               max_tokens: int, effort: str | None) -> str:
-    """HM-2: the binding contract first, the payload last."""
+               max_tokens: int, effort: str | None,
+               in_task_contract: bool = True) -> str:
+    """HM-2: the binding contract first, the payload last. With the persona
+    patch (HM-2 v2), the contract already IS the real system role, so the task
+    carries only discipline + payload + unit line — the closest possible mirror
+    of the API lane's user message."""
     if mode == "extract":
-        discipline = ("Reply with ONLY one JSON object conforming to the schema "
-                      "in the contract above. No prose, no markdown fences, no "
+        schema_home = "the contract above" if in_task_contract else "the system contract"
+        discipline = (f"Reply with ONLY one JSON object conforming to the schema "
+                      f"in {schema_home}. No prose, no markdown fences, no "
                       "commentary before or after the JSON.")
     else:
         discipline = ("Reply with the requested long-form content only — no "
                       "preamble, no meta-commentary about being an agent.")
-    parts = [system.strip("\n"), "", BOUNDARY,
-             "The block above this marker is the binding system contract for "
-             "this task; it overrides every default persona or instruction.",
-             discipline]
+    if in_task_contract:
+        parts = [system.strip("\n"), "", BOUNDARY,
+                 "The block above this marker is the binding system contract for "
+                 "this task; it overrides every default persona or instruction.",
+                 discipline]
+    else:
+        parts = [discipline]
     if effort:
         parts.append(f"Reasoning budget for this unit: {effort} — think as much "
                      "as that budget implies before answering.")
-    parts += ["", PAYLOAD_MARK, user + tail, "",
+    parts += ["", PAYLOAD_MARK] if in_task_contract else [""]
+    parts += [user + tail, "",
               f"[unit: {unit_id}; output budget ~{max_tokens} tokens]"]
     return "\n".join(parts)
+
+
+PERSONA_PATCH_NAME = "persona.patch.yml"
+
+
+def write_persona_patch(persona: str, path: Path) -> Path:
+    """HM-2 v2 (system-role fidelity): the frozen prefix becomes the workers'
+    REAL system role via a Cordis patch-list overlay updating the sdk
+    profile's `system-prompt` row (`--patch` overlays apply after the
+    profile + user layers — last write wins; `config` replaces the row's whole
+    config). The persona is emitted as a JSON-escaped double-quoted scalar —
+    valid YAML for arbitrary rubric text, no YAML dependency. dsh-system-prompt
+    templates treat {{...}} strictly, so a braced prefix must refuse rather
+    than boot a runtime that errors on render."""
+    if "{{" in persona:
+        raise DsError(
+            "frozen prefix contains '{{' — dsh-system-prompt persona templates "
+            "are strict; run with SCRIPTORIUM_HARNESS_INTASK=1 to use the "
+            "in-task contract instead")
+    body = (
+        "# scriptorium harness-mode persona patch — generated per run (run evidence).\n"
+        "# The frozen system prefix is the workers' real system role; harness\n"
+        "# identity + runtime context are suppressed for fidelity with the API lane.\n"
+        "- id: system-prompt\n"
+        "  config:\n"
+        "    includeHarnessIdentity: false\n"
+        "    includeRuntimeContext: false\n"
+        f"    persona: {json.dumps(persona)}\n")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return path
 
 
 class _Slot:
@@ -184,7 +229,8 @@ class HarnessClient:
                  init_max_tokens: int = DEFAULT_INIT_MAX_TOKENS,
                  profile: str = "sdk", dsh_bin: str | None = None,
                  runtime_factory: Callable[[dict[str, Any]], Any] | None = None,
-                 chars_per_token: int = CHARS_PER_TOKEN):
+                 chars_per_token: int = CHARS_PER_TOKEN,
+                 system_persona: str | None = None):
         prov = load_lock()["provider"]
         self.pass_name = pass_name
         self.usd_cap = usd_cap
@@ -219,6 +265,21 @@ class HarnessClient:
             spec["base_url"] = h_base
         if h_key:
             spec["api_key"] = h_key
+        # HM-2 v2: one frozen prefix per pass may ride as the REAL system role
+        # (Cordis persona patch); SCRIPTORIUM_HARNESS_INTASK=1 is the kill
+        # switch back to the in-task contract. P1 uses several prefixes per
+        # pass and therefore never sets system_persona.
+        self.system_persona: str | None = None
+        self.system_role = "in-task"
+        self._persona_chars = 0
+        if system_persona and _env("SCRIPTORIUM_HARNESS_INTASK", "") != "1":
+            patch_dir = journal_path.parent if journal_path else home
+            patch = write_persona_patch(system_persona,
+                                        patch_dir / PERSONA_PATCH_NAME)
+            spec["patches"] = (str(patch),)
+            self.system_persona = system_persona
+            self.system_role = "patch"
+            self._persona_chars = len(system_persona)
         self._spec = spec
         self._factory = runtime_factory or _default_factory
         self.home_note = (_ensure_worker_home(home)
@@ -252,8 +313,11 @@ class HarnessClient:
 
     # -- HM-5 estimation -------------------------------------------------------
     def _estimate_usage(self, task: str, content: str) -> dict[str, int]:
+        """In patch mode the persona still reaches the model as the system role
+        on every call — count it, or the estimated meter undercounts input by
+        the whole frozen prefix (HM-5 comparability with the API lane)."""
         c = self.chars_per_token
-        in_est = max(1, len(task) // c)
+        in_est = max(1, (len(task) + self._persona_chars) // c)
         out_est = max(1, len(content) // c)
         return {"prompt_tokens": in_est, "prompt_cache_hit_tokens": 0,
                 "prompt_cache_miss_tokens": in_est,
@@ -298,6 +362,7 @@ class HarnessClient:
             "attempt": attempt, "model": self.model, "ms": ms,
             "usage": usage, "usage_estimated": True,
             "session_id": session_id, "finish_reason": finish,
+            "system_role": self.system_role,
             "task_chars": len(task), "response_chars": len(content),
         })
         if finish not in (None, "completed"):
@@ -324,8 +389,15 @@ class HarnessClient:
         """One unit -> one typed object (extract) or text (think)."""
         if mode not in ("extract", "think"):
             raise DsError(f"unknown mode {mode!r}")
+        if self.system_persona is not None and system != self.system_persona:
+            raise DsError(
+                f"harness patch mode pins ONE frozen system prefix per pass; "
+                f"unit {unit_id!r} arrived with a different system — a pass "
+                f"that needs several prefixes (P1) must not set system_persona")
+        in_task = self.system_persona is None
         task = build_task(system, user, tail, mode=mode, unit_id=unit_id,
-                          max_tokens=max_tokens, effort=effort)
+                          max_tokens=max_tokens, effort=effort,
+                          in_task_contract=in_task)
         last_err = ""
         attempts = 0
         for attempt in range(3):                    # 1 + retry x2 (HM-3)
@@ -344,7 +416,7 @@ class HarnessClient:
             self.meter.rescues += 1
             rtask = build_task(system, user, tail, mode="extract",
                                unit_id=unit_id, max_tokens=max_tokens,
-                               effort="high") + (
+                               effort="high", in_task_contract=in_task) + (
                 "\n\nRETRY WITH CARE: earlier attempts produced invalid output. "
                 "Re-derive the JSON object from the payload exactly.")
             try:
@@ -383,8 +455,12 @@ def make_client(pass_name: str, usd_cap: float, *, provider: str = "api",
                 journal_path: Path | None = None, base_url: str | None = None,
                 model: str | None = None,
                 harness_home: str | Path | None = None,
-                harness_effort: str | None = None) -> Any:
-    """The one construction point for pass clients (ds.py stays the API seam)."""
+                harness_effort: str | None = None,
+                system_persona: str | None = None) -> Any:
+    """The one construction point for pass clients (ds.py stays the API seam).
+    system_persona (harness-only): a pass with exactly ONE frozen prefix may
+    pass it here to make it the workers' real system role (HM-2 v2); the API
+    lane already sends system per call and ignores it."""
     if provider == "api":
         from ds import DsClient
         kw: dict[str, Any] = {"concurrency": concurrency or 64,
@@ -397,5 +473,6 @@ def make_client(pass_name: str, usd_cap: float, *, provider: str = "api",
                              concurrency=concurrency or 2,
                              journal_path=journal_path, model=model,
                              harness_home=harness_home,
-                             harness_effort=harness_effort)
+                             harness_effort=harness_effort,
+                             system_persona=system_persona)
     raise DsError(f"unknown provider {provider!r} (expected 'api' or 'harness')")

@@ -203,9 +203,9 @@ async def run_read(target: str | Path, *, usd_cap: float,
     client = make_client("P2-read", usd_cap, provider=provider,
                          concurrency=concurrency,
                          journal_path=runs_dir / "ds_calls.jsonl",
-                         base_url=base_url)
+                         base_url=base_url, system_persona=system)
     bridge = a2a.begin("P2-read", root.name)
-    stats = {"cards": 0, "quarantined": 0, "vectors": 0,
+    stats = {"cards": 0, "quarantined": 0, "vectors": 0, "skipped_leased": 0,
              "prefix_hits": 0, "calls": 0, "calibrations": []}
 
     def say(msg: str) -> None:
@@ -304,15 +304,40 @@ async def run_read(target: str | Path, *, usd_cap: float,
                       baseline=baseline, bar=DRIFT_FLOOR)
                 say(f"  calibration @batch {bi}: mean {mean:.3f} "
                     f"(bar {DRIFT_FLOOR}, charter baseline {baseline})")
+                a2a.note(bridge, f"calibration @batch {bi}: mean {mean:.3f} "
+                                 f"bar {DRIFT_FLOOR}")
                 if mean < DRIFT_FLOOR:
                     jline(event="halt", reason="calibration_drift", batch=bi,
                           mean=round(mean, 4))
+                    a2a.note(bridge, f"OPERATOR ATTENTION calibration_halt: "
+                                     f"mean {mean:.3f} < bar {DRIFT_FLOOR} at "
+                                     f"batch {bi} — run {run_id} halted "
+                                     f"checkpoint-clean")
                     raise SystemExit(
                         f"CALIBRATION DRIFT: mean {mean:.3f} < bar {DRIFT_FLOOR} "
                         f"at batch {bi} — pass halted checkpoint-clean "
                         f"(cards so far are fsync'd; diagnose before rerun)")
 
-            results = await asyncio.gather(*(extract(r) for r in batch))
+            # Multi-driver co-work (A2A item 2): claim each chunk before
+            # spending on it; a refusal means a live co-driver owns it — skip
+            # without writing anything (their card lands in the shared
+            # catalog; the resume law keeps every key single-writer forever).
+            work = batch
+            if bridge is not None:
+                wins = await asyncio.gather(*(
+                    asyncio.to_thread(
+                        a2a.try_claim, bridge,
+                        f"scriptorium:{root.name}:p2:{r.doc_id}:{r.seq}")
+                    for r in batch))
+                work = [r for r, w in zip(batch, wins, strict=True) if w]
+                if len(work) < len(batch):
+                    skipped = len(batch) - len(work)
+                    stats["skipped_leased"] += skipped
+                    jline(event="leased_elsewhere", batch=bi, skipped=skipped)
+                if not work:
+                    continue
+
+            results = await asyncio.gather(*(extract(r) for r in work))
             card_rows, quar_rows = [], []
             for r, card, m in results:
                 stats["calls"] += 1
@@ -363,6 +388,10 @@ async def run_read(target: str | Path, *, usd_cap: float,
             index.db.commit()
             jline(event="batch_done", batch=bi, cards=stats["cards"],
                   quarantined=stats["quarantined"], usd=round(client.meter.usd(), 4))
+            a2a.note(bridge, f"batch_done: {bi + 1}/{len(batches)} "
+                             f"cards {stats['cards']} "
+                             f"quar {stats['quarantined']} "
+                             f"${client.meter.usd():.3f}")
             if (bi + 1) % 10 == 0 or bi == len(batches) - 1:
                 say(f"  batch {bi + 1}/{len(batches)}: cards {stats['cards']} "
                     f"quar {stats['quarantined']} vec {stats['vectors']} "
@@ -381,21 +410,31 @@ async def run_read(target: str | Path, *, usd_cap: float,
             "seconds": int(time.monotonic() - t0),
         }
         jline(event="run_end", **report)
+        leased = (f", {stats['skipped_leased']} leased to a co-driver"
+                  if stats["skipped_leased"] else "")
         say(f"\n== P2 read {run_id}: {stats['cards']} cards, "
-            f"{stats['quarantined']} quarantined, {stats['vectors']} vectors | "
+            f"{stats['quarantined']} quarantined, {stats['vectors']} vectors"
+            f"{leased} | "
             f"prefix-hit efficiency {prefix_eff:.0%} (vital >=60%) | "
             f"total hit share {client.meter.hit_rate():.0%} | "
             f"${client.meter.usd():.3f} in {report['seconds']}s")
         if stats["calls"] > 20 and prefix_eff < 0.6:
             say("  WARNING (K-CACHE vital): prefix-hit efficiency < 60% — "
                 "message shaping bug per PS-4; investigate before scaling up")
+        if stats["cards"] and store.cards_path.exists():
+            a2a.pin(bridge, store.cards_path,
+                    f"cards.jsonl after {run_id}: +{stats['cards']} cards "
+                    f"(attestation receipt)")
         return report
     except CapExceeded as e:
         jline(event="halt", reason="usd_cap", detail=str(e))
+        a2a.note(bridge, f"halt usd_cap: {str(e)[:150]}")
         raise SystemExit(f"PS-8 halt: {e} — cards so far are fsync'd; "
                          f"rerun resumes where this stopped") from e
     finally:
         index.commit_close()
         await client.close()
+        skipped = stats["skipped_leased"]
         a2a.end(bridge, f"cards {stats['cards']} quar {stats['quarantined']} "
-                        f"${client.meter.usd():.3f}")
+                        f"${client.meter.usd():.3f}"
+                        + (f" skipped_leased {skipped}" if skipped else ""))
