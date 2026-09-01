@@ -12,6 +12,12 @@ For every card quote: does tape_text[start:end] equal the quoted text?
   no_offset  — the worker declined offsets (start=-1 per the contract's
                "use -1 rather than guessing"); presence-checked instead
 Claim spans carry no text, so they are bounds-checked (0 <= start < end <= len).
+
+A card whose chunk text cannot be fetched from the Tape is NOT scored: its
+quotes would all read as fabrication and blame the model for a data problem
+(wrong archive root, tape drift, a card from another catalog). Such cards are
+counted in `cards_unfetchable` and excluded from every rate — the fence must
+measure the reading, never the plumbing.
 """
 
 from __future__ import annotations
@@ -51,9 +57,13 @@ def fence_check(archive_root: str | Path, limit: int | None = None) -> dict[str,
     c = {"valid": 0, "invalid": 0, "absent": 0}
     misses: list[dict[str, Any]] = []
     squashed: dict[tuple[str, int], str] = {}
+    unfetchable: set[tuple[str, int]] = set()
     for row in rows:
         key = (row["doc_id"], row["seq"])
-        text = texts.get(key, "")
+        text = texts.get(key)
+        if text is None:
+            unfetchable.add(key)          # plumbing, not fabrication — skip
+            continue
         if key not in squashed:
             squashed[key] = _squash(text)
         sq_text = squashed[key]
@@ -72,7 +82,9 @@ def fence_check(archive_root: str | Path, limit: int | None = None) -> dict[str,
                     misses.append({"doc_id": row["doc_id"], "seq": row["seq"],
                                    "quote": qt[:80]})
                 continue
-            if text[start:end] == quote["text"]:
+            # offsets right = exact, whether or not the model included the
+            # quote's surrounding whitespace in either the text or the span
+            if text[start:end] == quote["text"] or text[start:end].strip() == qt:
                 q["exact"] += 1
             elif qt in text:
                 q["substring"] += 1
@@ -95,7 +107,8 @@ def fence_check(archive_root: str | Path, limit: int | None = None) -> dict[str,
                 + q["no_offset_hit"] + q["no_offset_norm"])
     unlocated = q["miss"] + q["no_offset_miss"]
     return {
-        "cards": len(rows), "quotes": n_quotes, **q, "claims": c,
+        "cards": len(rows) - len(unfetchable), "quotes": n_quotes, **q,
+        "cards_unfetchable": len(unfetchable), "claims": c,
         "quote_verified_rate": round(verified / n_quotes, 4) if n_quotes else None,
         "quote_exact_rate": round(q["exact"] / n_quotes, 4) if n_quotes else None,
         "quote_unlocated_rate": round(unlocated / n_quotes, 4) if n_quotes else None,

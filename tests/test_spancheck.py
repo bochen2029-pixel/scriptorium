@@ -50,3 +50,35 @@ def test_fence_classification():
     assert rep["claims"] == {"valid": 1, "invalid": 1, "absent": 1}
     assert rep["quote_verified_rate"] == 0.6
     assert len(rep["sample_misses"]) == 2
+    assert rep["cards_unfetchable"] == 0
+
+
+def test_exact_when_offsets_include_whitespace():
+    """Right offsets + a padded quote is still exact — not a substring
+    downgrade (the exact rate is a headline fence number)."""
+    arch = fresh_dir("spancheck-ws")
+    make_catalog(arch, quotes=[
+        {"text": " The negatives are forever. ", "start": 0, "end": 27},
+    ])
+    rep = fence_check(arch)
+    assert rep["exact"] == 1 and rep["substring"] == 0
+
+
+def test_unfetchable_chunk_is_not_fabrication():
+    """A card whose chunk is not in this Tape must not be scored as miss —
+    that would blame the model for a wrong-archive/tape-drift problem."""
+    arch = fresh_dir("spancheck-missing")
+    make_catalog(arch, quotes=[{"text": "The negatives are forever.",
+                                "start": 0, "end": 26}])
+    cards_p = arch / "catalog" / "cards" / "cards.jsonl"
+    row = json.loads(cards_p.read_text("utf-8").splitlines()[0])
+    ghost = dict(row, doc_id="d" + "9" * 31)      # a key no tape record has
+    with open(cards_p, "a", encoding="utf-8") as f:
+        f.write(json.dumps(ghost, ensure_ascii=False) + "\n")
+
+    rep = fence_check(arch)
+    assert rep["cards_unfetchable"] == 1
+    assert rep["cards"] == 1                       # only the real card scored
+    assert rep["quotes"] == 1 and rep["exact"] == 1
+    assert rep["miss"] == 0                        # the ghost never counted
+    assert rep["quote_verified_rate"] == 1.0
