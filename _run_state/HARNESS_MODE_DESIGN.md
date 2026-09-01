@@ -5,6 +5,40 @@ leases (multi-driver co-work), batch findings, artifact-pin attestation, and the
 patch (frozen prefix as the workers' REAL system role). 124 pytest + ruff clean.**
 Companion facts: `_run_state/NEIGHBOR_ORGANS.md` + `_run_state/survey/{intercom,dsh-harness}.md`.
 
+## Round-8: the goldens are MODEL-SPECIFIC — a cross-model lane needs its own charter
+
+With the contract actually reaching the model (in-task), the slice scored **0.327** — a real
+reading, far above the 0.000 no-contract runs, still under the 0.55 bar. Per-field F1 of GLM's
+16 calibration answers vs the SAME golden shards, beside the charter's own DeepSeek run:
+
+| field | DeepSeek (charter baseline, n=105) | GLM-5.3-Flash (n=16) |
+|---|---|---|
+| entities | 0.833 | 0.505 |
+| claims | **0.427** | **0.043** |
+| topics | 0.825 | 0.435 |
+
+Entities and topics degrade gracefully (different granularity — GLM emitted 17 entities where the
+reference had 42, or 25 where it had 22). **Claims collapse to near-zero**, and that is a
+measurement artifact as much as a quality one: `compare_cards` scores claims as exact-set F1 over
+`(normalized subject, normalized predicate, polarity)` triples, and **the golden references were
+authored by DeepSeek** during P1. Calibration therefore measures *agreement with the charter
+author's phrasing*, not absolute reading quality — a second model paraphrases the predicate
+("depends on" vs "requires") and scores 0 on a correct claim. DeepSeek itself only reaches 0.427
+on its OWN goldens, which shows how brittle exact-triple matching is even in-family.
+
+**Consequence, and it is architectural (not a bug):** the charter's frozen model is part of the
+catalog's identity — cards already carry `fp.model`, and the spec's whole consistency claim is
+"one frozen model + one frozen rubric = a million identical librarians". So a harness lane whose
+workers are a DIFFERENT model must get **its own charter**: run `discover --provider harness` +
+`freeze` so the goldens are authored by the reading model, exactly parallel to RATIFIED item 6
+("v2 gets its own charter; the v1 charter stays bound to v1"). Reading a DeepSeek-authored
+charter with GLM workers is a version violation in spirit, and calibration is right to refuse it.
+
+Alternatives considered and rejected for now: (a) semantic/embedding claim matching — softens a
+falsifier into a judgment call, and the local embedder is already a dependency of the index, not
+the gate; (b) lowering the bar for cross-model runs — that is exactly the "retry a quality gate
+into submission" failure the watcher was written to avoid.
+
 ## Round-7 (Claude Code session): the modal path DROPS the system role — in-task is LAW for modal
 
 Attempt 2 of the slice (nonce-fixed sessions, clean persona, open Modal window: warmup + all 16
