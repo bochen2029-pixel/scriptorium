@@ -42,7 +42,11 @@ What makes this more than "summarize my files":
   deterministic code, never by a model. In this repo's first live run the
   fence caught **28.5% of model "quotes" as paraphrase-as-quote** — measured,
   quarantined, and structurally unable to ship as verbatim. That refusal *is*
-  the product working.
+  the product working. Model-emitted character offsets measured **0% usable**,
+  so spans are *derived*: `fence --derive` locates every verified quote in the
+  Tape itself and writes the true coordinates (87.2% of quotes on the measured
+  catalog); anything unlocated simply has no coordinates and cannot render as
+  verbatim.
 - **Sovereignty split** — pixels and audio never leave the box (local
   Qwen3.5-9B OCR, local whisper.cpp ASR, local embeddings); only canonical
   *text* rents the reading.
@@ -75,7 +79,15 @@ scriptorium.cmd intake   D:\my-archive     :: builds/extends the Tape under that
 scriptorium.cmd status   D:\my-archive --verify
 scriptorium.cmd discover D:\my-archive     :: P1: propose charter + goldens (API, capped)
 scriptorium.cmd freeze   D:\my-archive     :: verify the S1 falsifier, fingerprint charter
+scriptorium.cmd read     D:\my-archive --cap 5   :: P2: cards under the frozen charter
+scriptorium.cmd fence    D:\my-archive --derive  :: span fence + code-located spans
+scriptorium.cmd query    D:\my-archive "quotes AND fence"   :: look at what it read
 ```
+
+`read` is resumable and kill-safe (rerun continues with zero duplicate cards
+and zero gaps), halts checkpoint-clean if calibration drifts below the
+charter's bar, and stops hard at `--cap`. `fence` and `query` are
+deterministic and spend nothing.
 
 The archive root is the folder holding `manifest.yaml`. **The Tape lives with
 the archive, never inside `C:\scriptorium`** — the negatives belong to the life
