@@ -56,6 +56,7 @@ BATCH_SIZE = 48
 CALIB_EVERY = 50          # batches (spec section 5 default N=50)
 CALIB_SHARDS = 8
 DRIFT_FLOOR = SCORING_BAR  # calibration mean below the charter bar = halt
+HARNESS_CONCURRENCY = 6   # HM-7: each slot is a full runtime subprocess
 
 
 def _refcard_prompt() -> str:
@@ -188,8 +189,10 @@ async def run_read(target: str | Path, *, usd_cap: float,
                    projects: list[str] | None = None,
                    max_tokens: int | None = None,
                    batch_size: int = BATCH_SIZE, calib_every: int = CALIB_EVERY,
-                   concurrency: int = BATCH_SIZE, base_url: str | None = None,
+                   concurrency: int | None = None, base_url: str | None = None,
                    provider: str = "api", embed: bool = True) -> dict[str, Any]:
+    if concurrency is None:
+        concurrency = BATCH_SIZE if provider == "api" else HARNESS_CONCURRENCY
     _mf, root = load_manifest(target)
     charter = root / "charter"
     charter_lock = verify_frozen_charter(charter)
@@ -418,7 +421,9 @@ async def run_read(target: str | Path, *, usd_cap: float,
             f"prefix-hit efficiency {prefix_eff:.0%} (vital >=60%) | "
             f"total hit share {client.meter.hit_rate():.0%} | "
             f"${client.meter.usd():.3f} in {report['seconds']}s")
-        if stats["calls"] > 20 and prefix_eff < 0.6:
+        if provider == "api" and stats["calls"] > 20 and prefix_eff < 0.6:
+            # the PS-4 cache-shaping vital is an API-lane law; harness usage is
+            # ESTIMATED with hit=0 by construction (HM-5), so it cannot apply
             say("  WARNING (K-CACHE vital): prefix-hit efficiency < 60% — "
                 "message shaping bug per PS-4; investigate before scaling up")
         if stats["cards"] and store.cards_path.exists():

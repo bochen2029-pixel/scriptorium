@@ -246,6 +246,10 @@ def main(argv: list[str] | None = None) -> int:
                            help="hard token ceiling for the slice")
             p.add_argument("--no-embed", action="store_true",
                            help="skip the :8092 embedding sidecar (backfill later)")
+            p.add_argument("--concurrency", type=int, default=None,
+                           help="parallel unit calls (default: 48 for api; 6 "
+                                "for harness — each harness slot is a full "
+                                "runtime subprocess, HM-7)")
 
     for name in RUNG_STUBS:
         sub.add_parser(name, help=f"[{RUNG_STUBS[name][0]}] {RUNG_STUBS[name][1]}")
@@ -280,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
             args.target, usd_cap=args.cap,
             projects=args.projects.split(",") if args.projects else None,
             max_tokens=args.max_tokens, provider=args.provider,
-            embed=not args.no_embed))
+            embed=not args.no_embed, concurrency=args.concurrency))
         return 0
     rung, what = RUNG_STUBS[args.cmd]
     print(f"`{args.cmd}` is rung {rung} ({what}).\n"
