@@ -284,3 +284,62 @@ def test_env_loader_does_not_override(monkeypatch, tmp_path):
     import os
     assert os.environ["DEEPSEEK_API_KEY"] == "from-env"       # existing wins
     assert os.environ["OTHER"] == "x"
+
+
+def test_transport_backoff_does_not_hold_a_concurrency_slot(ds_stub, monkeypatch):
+    """A retry sleeping after a transport error must release its slot first —
+    otherwise a network wobble parks every slot on a sleeping call and starves
+    the healthy ones (the 429/5xx path always slept outside the gate)."""
+    import httpx
+
+    import ds as dsm
+
+    c = client(ds_stub, concurrency=2)
+    calls = {"n": 0}
+    active_while_sleeping = []
+
+    async def flaky_post(url, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("boom")
+        return await real_post(url, **kw)
+
+    real_post = c._client.post
+    monkeypatch.setattr(c._client, "post", flaky_post)
+
+    real_sleep = asyncio.sleep
+
+    async def spy_sleep(sec):
+        active_while_sleeping.append(c.gate.active)
+        await real_sleep(0)                      # don't actually wait
+
+    monkeypatch.setattr(dsm.asyncio, "sleep", spy_sleep)
+
+    async def go():
+        out, _ = await c.chat(system="S", user="U", mode="extract",
+                              unit_id="u1", out_model=TinyOut)
+        await c.close()
+        return out
+
+    assert run(go()).answer == "ok"
+    assert active_while_sleeping == [0]          # slot released before sleeping
+
+
+def test_missing_model_field_does_not_poison_the_fingerprint(ds_stub):
+    """PS-9 must not halt a pass because the FIRST response omitted `model`
+    and the second one reported it honestly."""
+    ds_stub.script = [{"model": "", "content": '{"answer": "a"}'},
+                      {"model": "deepseek-v4-flash-0731", "content": '{"answer": "b"}'}]
+    c = client(ds_stub)
+
+    async def go():
+        a, _ = await c.chat(system="S", user="U", mode="extract",
+                            unit_id="u1", out_model=TinyOut)
+        b, _ = await c.chat(system="S", user="U", mode="extract",
+                            unit_id="u2", out_model=TinyOut)
+        await c.close()
+        return a, b
+
+    a, b = run(go())
+    assert (a.answer, b.answer) == ("a", "b")
+    assert c.model_fp == "deepseek-v4-flash-0731"

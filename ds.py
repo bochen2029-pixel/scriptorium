@@ -313,6 +313,7 @@ class DsClient:
                 f"usd_cap ${self.usd_cap:.2f} mid-flight — halting (PS-8)")
         backoff = 1.0
         for transport_try in range(7):
+            transport_err: httpx.HTTPError | None = None
             async with self.gate:
                 t0 = time.monotonic()
                 try:
@@ -322,10 +323,16 @@ class DsClient:
                     self.gate.punish()
                     if transport_try == 6:
                         raise _SoftFailure(f"transport: {e}") from e
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, 30)
-                    continue
-                ms = int((time.monotonic() - t0) * 1000)
+                    transport_err = e
+                else:
+                    ms = int((time.monotonic() - t0) * 1000)
+            if transport_err is not None:
+                # back off OUTSIDE the gate: a sleeping retry must not hold a
+                # concurrency slot, or a network wobble starves healthy calls
+                # (the 429/5xx path below already sleeps outside)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+                continue
             if r.status_code in (429,) or r.status_code >= 500:
                 self.gate.punish()
                 if transport_try == 6:
@@ -338,8 +345,11 @@ class DsClient:
             self.gate.reward()
             data = r.json()
             model_seen = data.get("model", "")
-            if self.model_fp is None:
-                self.model_fp = model_seen
+            if not self.model_fp:
+                # only a REAL name becomes the fingerprint: a response that
+                # omits `model` must not pin "" and make the next honest
+                # answer look like a mid-pass model change (PS-9 false halt)
+                self.model_fp = model_seen or None
             elif model_seen and model_seen != self.model_fp:
                 raise ModelChanged(
                     f"model fingerprint changed mid-pass: {self.model_fp!r} -> "
