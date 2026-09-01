@@ -260,6 +260,11 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--max-out-tokens", type=int, default=None,
                            help="per-card output budget (default 6000; raise "
                                 "for dense chunks that quarantined)")
+            p.add_argument("--dry-run", action="store_true",
+                           help="preflight an expensive read: verify the "
+                                "charter, select the slice, gate the budget "
+                                "and prove the tape readable — then stop "
+                                "without spending anything")
         if name == "query":
             p.add_argument("terms", nargs="?", default=None,
                            help="FTS5 match expression, e.g. "
@@ -308,7 +313,8 @@ def main(argv: list[str] | None = None) -> int:
             max_tokens=args.max_tokens, provider=args.provider,
             embed=not args.no_embed, concurrency=args.concurrency,
             retry_quarantined=args.retry_quarantined,
-            out_tokens=args.max_out_tokens or OUT_TOKENS))
+            out_tokens=args.max_out_tokens or OUT_TOKENS,
+            dry_run=args.dry_run))
         return 0
     if args.cmd == "query":
         import json as _json

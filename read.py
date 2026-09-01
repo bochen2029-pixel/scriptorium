@@ -230,7 +230,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
                    concurrency: int | None = None, base_url: str | None = None,
                    provider: str = "api", embed: bool = True,
                    retry_quarantined: bool = False,
-                   out_tokens: int = OUT_TOKENS) -> dict[str, Any]:
+                   out_tokens: int = OUT_TOKENS,
+                   dry_run: bool = False) -> dict[str, Any]:
     if concurrency is None:
         concurrency = BATCH_SIZE if provider == "api" else HARNESS_CONCURRENCY
     _mf, root = load_manifest(target)
@@ -306,6 +307,44 @@ async def run_read(target: str | Path, *, usd_cap: float,
         reader = TextReader(root)
         say(f"  text index: {reader.stats['indexed']} records "
             f"({reader.stats['added']} newly indexed)")
+
+        if dry_run:
+            # Preflight for an expensive run: everything except the spend.
+            # The charter has been fingerprint-verified, the slice selected,
+            # the budget gated and the tape proven readable by this point.
+            sample = todo[:min(len(todo), 200)]
+            served = reader.get_many([(r.doc_id, r.seq) for r in sample])
+            unreadable = len(sample) - len(served)
+            emb = "skipped (--no-embed)"
+            if embed:
+                probe = EmbedSidecar()
+                emb = ("up" if probe.ensure(launch=False)
+                       else "DOWN — vectors would be deferred to a rerun")
+            report = {
+                "run_id": run_id, "dry_run": True, "provider": provider,
+                "selected": len(selected), "already_done": len(selected) - len(todo),
+                "todo": len(todo), "todo_tokens": sum(r.tokens for r in todo),
+                "batches": (len(todo) + batch_size - 1) // batch_size,
+                "est_worst_case_usd": round(est, 2),
+                "est_realistic_usd": round(realistic, 2),
+                "usd_cap": usd_cap,
+                "charter_root": charter_lock.get("root_fingerprint"),
+                "text_index": reader.stats,
+                "sampled_chunks_readable": f"{len(served)}/{len(sample)}",
+                "embed_sidecar": emb,
+            }
+            say(f"\n== DRY RUN {run_id}: {len(todo)} chunks over "
+                f"{report['batches']} batches | worst case ${est:.2f}, "
+                f"realistic ~${realistic:.2f}, cap ${usd_cap:.2f}")
+            say(f"   charter {report['charter_root']} verified | "
+                f"tape readable {report['sampled_chunks_readable']} sampled | "
+                f"embed sidecar {emb}")
+            if unreadable:
+                say(f"   WARNING {unreadable} sampled chunks are NOT readable "
+                    f"from the tape — they would become typed quarantines")
+            say("   nothing was spent; rerun without --dry-run to read")
+            jline(event="dry_run", **report)
+            return report
 
         shards = [json.loads(p.read_text("utf-8")) for p in
                   sorted((charter / "goldens" / "shards").glob("shard-*.json"))]

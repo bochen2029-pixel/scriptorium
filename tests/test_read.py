@@ -211,3 +211,35 @@ def test_read_multi_driver_lease_partition(stubs, monkeypatch):
     cards = read_cards(arch)
     keys = [(c["doc_id"], c["seq"]) for c in cards]
     assert len(keys) == len(set(keys)) == 12    # no dupes, no gaps
+
+
+def test_dry_run_preflights_without_spending(stubs, monkeypatch):
+    """The preflight for an expensive read: verify the charter, select the
+    slice, gate the budget, prove the tape readable — and make ZERO model
+    calls, so nothing is spent and no card is written."""
+    arch = frozen_mini(stubs)
+    calls: list = []
+    import ds
+
+    real_request = ds.DsClient._request
+
+    async def spy(self, body, **kw):
+        calls.append(kw.get("unit_id"))
+        return await real_request(self, body, **kw)
+
+    monkeypatch.setattr(ds.DsClient, "_request", spy)
+
+    rep = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs,
+                               batch_size=4, dry_run=True))
+    assert rep["dry_run"] is True
+    assert rep["todo"] == 12 and rep["batches"] == 3
+    assert rep["already_done"] == 0
+    assert rep["charter_root"]
+    assert rep["sampled_chunks_readable"] == "12/12"
+    assert rep["est_realistic_usd"] <= rep["est_worst_case_usd"]
+    assert calls == []                       # not one model call
+    assert read_cards(arch) == []            # and not one card
+
+    # the real read still works afterwards, unaffected
+    real = asyncio.run(run_read(arch, usd_cap=5.0, base_url=stubs, batch_size=4))
+    assert real["cards"] == 12
