@@ -45,12 +45,13 @@ from typing import Any
 import a2a
 from canon import blake2b128_hex
 from cards import CardV0
-from discover import SCORING_BAR, RecRow, compare_cards, fetch_texts, scan_tape
+from discover import SCORING_BAR, RecRow, compare_cards, scan_tape
 from ds import CapExceeded, UnitQuarantined
 from harness import make_client
 from local import EmbedSidecar
 from manifest import load_manifest
 from organs import CODE_DIR
+from textindex import TextReader
 from textnorm import estimate_tokens
 
 BATCH_SIZE = 48
@@ -252,6 +253,7 @@ async def run_read(target: str | Path, *, usd_cap: float,
 
     store = CardStore(root / "catalog" / "cards")
     index = CatalogIndex(root / "catalog" / "index.sqlite")
+    reader: TextReader | None = None
     t0 = time.monotonic()
     try:
         say(f"[{run_id}] scanning tape ...")
@@ -278,8 +280,13 @@ async def run_read(target: str | Path, *, usd_cap: float,
         say(f"  PS-8 gate: estimate ${est:.2f} under cap ${usd_cap:.2f} "
             f"(prefix ~{prefix_tokens} tok/call) — proceeding")
 
-        say("  fetching chunk texts (tape pass 2) ...")
-        texts = fetch_texts(root, {(r.doc_id, r.seq) for r in todo})
+        # Bounded memory: index the tape's text records once, then read each
+        # batch's chunks on demand. Loading every selected text upfront costs
+        # ~1GB of strings held for hours on a full-corpus read.
+        say("  indexing tape text records (offsets sidecar) ...")
+        reader = TextReader(root)
+        say(f"  text index: {reader.stats['indexed']} records "
+            f"({reader.stats['added']} newly indexed)")
 
         shards = [json.loads(p.read_text("utf-8")) for p in
                   sorted((charter / "goldens" / "shards").glob("shard-*.json"))]
@@ -296,7 +303,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
 
         await client.warmup(system)
 
-        async def extract(r: RecRow) -> tuple[RecRow, CardV0 | None, dict | str]:
+        async def extract(r: RecRow, texts: dict[tuple[str, int], str]
+                          ) -> tuple[RecRow, CardV0 | None, dict | str]:
             meta = doc_meta.get(r.doc_id, {})
             header = (f"[doc {r.doc_id[:10]} | {meta.get('path', '?')} | "
                       f"year {r.year} | project {r.project} | seq {r.seq}]\n")
@@ -373,7 +381,27 @@ async def run_read(target: str | Path, *, usd_cap: float,
                 if not work:
                     continue
 
-            results = await asyncio.gather(*(extract(r) for r in work))
+            # this batch's texts only; dropped when the batch ends. Read on
+            # this thread: it happens between batches with nothing in flight,
+            # and it keeps sqlite's thread-affinity guard meaningful.
+            texts = reader.get_many([(r.doc_id, r.seq) for r in work])
+            missing = [r for r in work if (r.doc_id, r.seq) not in texts]
+            if missing:
+                # the tape cannot serve these chunks: a typed quarantine, never
+                # a crash and never a silent skip (no-silent-drops law)
+                store.append_batch(store.quar_path, [
+                    {"doc_id": r.doc_id, "seq": r.seq, "run_id": run_id,
+                     "reason": "text_unavailable: chunk not readable from the "
+                               "tape text index"} for r in missing])
+                stats["quarantined"] += len(missing)
+                jline(event="text_unavailable", batch=bi, n=len(missing))
+                a2a.note(bridge, f"text_unavailable: {len(missing)} chunks in "
+                                 f"batch {bi} could not be read from the tape")
+                work = [r for r in work if (r.doc_id, r.seq) in texts]
+                if not work:
+                    continue
+
+            results = await asyncio.gather(*(extract(r, texts) for r in work))
             card_rows, quar_rows = [], []
             for r, card, m in results:
                 stats["calls"] += 1
@@ -471,6 +499,8 @@ async def run_read(target: str | Path, *, usd_cap: float,
                          f"rerun resumes where this stopped") from e
     finally:
         index.commit_close()
+        if reader is not None:
+            reader.close()
         await client.close()
         skipped = stats["skipped_leased"]
         a2a.end(bridge, f"cards {stats['cards']} quar {stats['quarantined']} "
