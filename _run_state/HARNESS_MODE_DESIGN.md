@@ -5,6 +5,52 @@ leases (multi-driver co-work), batch findings, artifact-pin attestation, and the
 patch (frozen prefix as the workers' REAL system role). 124 pytest + ruff clean.**
 Companion facts: `_run_state/NEIGHBOR_ORGANS.md` + `_run_state/survey/{intercom,dsh-harness}.md`.
 
+## Round-9 VERDICT: the lane is qualified; GLM-5.3-Flash as the worker model is NOT
+
+Round 8 predicted that a GLM-authored charter would rescue the score. Measured instead of
+assumed — four calibration runs on the SAME 16 golden shards, scored every way (all from calls
+already spent, `_local/cross_score.py`):
+
+| comparison | entities | claims | topics | **score** |
+|---|---|---|---|---|
+| DeepSeek vs its own goldens (charter baseline, n=105) | 0.833 | 0.427 | 0.825 | **0.710 / 0.718** |
+| GLM(low) vs DeepSeek goldens | 0.505 | 0.043 | 0.435 | **0.327** |
+| GLM(low, run 2) vs DeepSeek goldens | 0.521 | 0.079 | 0.510 | **0.370** |
+| GLM(medium) vs DeepSeek goldens | 0.462 | 0.043 | 0.279 | **0.262** |
+| **GLM(low) vs GLM(low) — same-effort self-consistency** | 0.585 | 0.167 | 0.739 | **0.497** |
+| GLM(low) vs GLM(medium) — cross-effort | 0.558 | 0.121 | 0.655 | 0.445 |
+
+Two effects, both real, now separated:
+
+1. **The cross-model phrasing penalty is large: about +0.13.** Scoring GLM against ITSELF instead
+   of against DeepSeek's goldens lifts 0.370 → 0.497. Round 8's claim holds — goldens are
+   model-specific and calibration partly measures agreement with the charter's author.
+2. **But GLM's own reproducibility is the binding constraint: 0.497 vs DeepSeek's 0.714.** Even
+   with a GLM-authored charter, the same model re-reading the same chunk agrees with itself at
+   ~0.50 — **below the charter's 0.55 bar**. The deficiency is specific and visible: entities
+   0.585 and topics 0.739 are serviceable; **claims 0.167** are not. GLM does not emit
+   reproducible `(subject, predicate, polarity)` triples for this rubric.
+   Prediction, stated for the record: a `discover --provider harness` run would fail the S1
+   falsifier too (SCORING_BAR is a fixed 0.55, so ~0.50 self-agreement refuses the freeze) —
+   i.e. the gate catches it one rung earlier, not later. Untested; ~370 GLM calls to confirm.
+   Also note effort=medium scored WORSE than low (0.262 vs 0.327/0.370): more reasoning is not
+   the lever, so an effort bump is not a fix worth buying.
+
+**Verdict.** The harness lane is *architecturally* qualified — it wrote a complete 12-card
+catalog segment end-to-end (round 4), enforces every law identically, and its A2A layer is live
+on the bus. The *worker model* is not qualified for corpus #1's charter: three independent runs
+land 0.26–0.37 against the frozen charter and ~0.50 against itself, all under the bar, and the
+calibration gate refused every one of them checkpoint-clean without writing a single card. That
+refusal is the system working — a lane that shipped 0.33-quality cards into a lifetime catalog
+would be the real failure. **Production reading of corpus #1 stays on the API lane (DeepSeek,
+0.71 self-agreement).** The harness lane is ready the day a stronger worker model is wired to
+DSH (it is one env var: `SCRIPTORIUM_HARNESS_MODEL`), and remains useful today for
+non-calibrated work.
+
+Total measured cost of this entire qualification exercise: **$0** cash (Modal quota only) plus
+about five minutes of wall-clock per attempt — because the halt fires at batch 0, before any
+card is written.
+
 ## Round-8: the goldens are MODEL-SPECIFIC — a cross-model lane needs its own charter
 
 With the contract actually reaching the model (in-task), the slice scored **0.327** — a real

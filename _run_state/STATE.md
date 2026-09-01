@@ -18,16 +18,19 @@ verifiable, negatives forever):
   0.710/0.718 — BETTER than v1), OUTREACH slice read (56 cards, fence 87.2%
   verified vs v1's 71.5%). **v2 is the production tape.**
 
-**Two lanes to the full v2 read now exist; each needs one thing:**
-- **api lane**: operator top-up (~$32 at $0.184/M; balance ~$6.8), then
-  `scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 35`.
-- **harness lane** (the operator's own GLM-5.3-Flash via Modal, ~$0 cash):
-  waits on the Modal plan window (429 mid-session 2026-09-01, see BLOCKED),
-  then `SCRIPTORIUM_A2A=1 SCRIPTORIUM_DSH_BIN=C:/scriptorium/_local/dsh-dev.cmd
-  scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --provider harness
-  --cap 35` — but the FERRYMAN qualification slice (auto-retrying via
-  `_local/ferryman_watcher.sh`) and its fence comparison come FIRST; the full
-  harness read stays the operator's call.
+**Two lanes exist. The qualification question is ANSWERED (2026-09-01):**
+- **api lane — QUALIFIED, and the only production reader today.** Needs the
+  operator top-up (~$32 at $0.184/M; balance MEASURED $15.15 — about half),
+  then `scriptorium.cmd read C:\_DAD\projects-mirror-archive-v2 --cap 35`.
+- **harness lane — the LANE is proven; the WORKER MODEL is not.** Four live
+  calibration runs on corpus #1's frozen charter scored 0.262-0.370 (bar
+  0.55); GLM-5.3-Flash's agreement with ITSELF on the same shards is 0.497 vs
+  DeepSeek's 0.714, so even a GLM-authored charter would sit under the bar
+  (claims F1 0.167 is the specific deficiency). Every run halted
+  checkpoint-clean with zero cards written — the gate working, at $0 cash.
+  Full evidence table: HARNESS_MODE_DESIGN.md "Round-9 VERDICT". The lane is
+  one env var (`SCRIPTORIUM_HARNESS_MODEL`) from being useful the day a
+  stronger worker model is wired to DSH.
 
 ## v2 pipeline results (2026-08-01) — the compression paid off twice
 
@@ -206,8 +209,10 @@ work). ROUND 2 (2026-09-01): the Intercom A2A layer landed (`a2a.py`, opt-in
 `SCRIPTORIUM_A2A=1` — pass lease refuses double-drivers before any spend,
 run_start/run_end + per-quarantine findings, soft-degrades when the bus is
 down; 10 tests, 113 total green). The REAL runtime smoke PASSED to the provider
-boundary: SDK installed editable from the DSH checkout (PyPI name is an empty
-stub — never `pip install deepseek-harness-sdk` from PyPI), `_local\dsh-dev.cmd`
+boundary: SDK installed editable from the DSH checkout (PyPI note, re-measured
+2026-09-01: `deepseek-harness-sdk 0.1.1rc1` now EXISTS on PyPI with real wheels,
+but `deepseek-harness-runtime-bin` ships mac/linux wheels ONLY — no Windows —
+so on this box the editable-from-checkout install remains the law), `_local\dsh-dev.cmd`
 wrapper as `dsh_bin`, worker home inherits the operator's `~/.dsh/settings.yaml`
 (`harness._ensure_worker_home`), profile **`sdk`** (sdk-minimal lacks llm-pi-ai
 — init rejected provider "modal"), boot 2.6s, init validated modal/GLM-5.3-Flash,
@@ -271,7 +276,9 @@ all evidence: `_run_state/HARNESS_MODE_DESIGN.md`.
   the operator may bless routing workers via the ZAI credentials instead
   (`SCRIPTORIUM_HARNESS_PROVIDER`/`MODEL` env — different pocket, so it stays
   the operator's call).
-- **API lane full-corpus P2: operator top-up** (~$32; balance ~$6.8).
+- **API lane full-corpus P2: operator top-up** (~$32; balance measured $15.15
+  on 2026-09-01 — covers roughly half; a half-corpus api read is possible
+  today if the operator prefers spend over waiting on Modal).
 - Nothing else.
 
 ## Next session's first move

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import random
 import re
 import time
@@ -41,7 +42,8 @@ from tape import Tape
 
 SEED_DEFAULT = 20260731
 SCORING_BAR = 0.55           # proposed at S1; calibration refines at S2
-STABILITY_EPS = 0.05
+STABILITY_EPS = 0.05         # absolute tolerance FLOOR (see stability_verdict)
+STABILITY_SE = 2.0           # ... or this many standard errors, whichever is wider
 BATCH_TOKENS = 45_000
 INDUCTION_CONCURRENCY = 32
 
@@ -213,6 +215,44 @@ def _f1(a: set, b: set) -> float | None:
     inter = len(a & b)
     p, r = inter / len(b), inter / len(a)
     return 2 * p * r / (p + r) if p + r else 0.0
+
+
+def stability_verdict(rep1: dict[str, Any], rep2: dict[str, Any]) -> dict[str, Any]:
+    """The S1 stability falsifier, noise-aware.
+
+    Both runs score the SAME shards, so the honest question is whether their
+    per-shard scores differ by more than measurement noise — a PAIRED
+    comparison. The tolerance is `max(STABILITY_EPS, STABILITY_SE * SE)`:
+    the absolute epsilon stays a floor (large-n runs are never held to an
+    impossibly tight standard), and small samples get the wider tolerance
+    their own variance earns.
+
+    Why (measured 2026-09-01, all four charters ever scored on this box):
+      corpus#1 v1   n=118  gap 0.0099  SE 0.0208  |t| 0.47  -> stable (unchanged)
+      corpus#1 v2   n=120  gap 0.0083  SE 0.0186  |t| 0.45  -> stable (unchanged)
+      collection#2  n=30   gap 0.0759  SE 0.0337  |t| 2.25  -> UNSTABLE (still refused)
+      collection#2  n=42   gap 0.0516  SE 0.0407  |t| 1.27  -> stable (was a FALSE POSITIVE)
+    A fixed absolute epsilon tests a gap that shrinks as 1/sqrt(n) against a
+    constant, so it silently becomes a corpus-size test: small archives get
+    refused for sampling noise. Both frozen charters keep their verdicts, the
+    genuinely unstable run is still refused, and the quality bar (SCORING_BAR,
+    absolute) is untouched — this rule only decides "same or different", never
+    "good enough"."""
+    s1 = {s["id"]: s["score"] for s in rep1.get("shards", [])}
+    s2 = {s["id"]: s["score"] for s in rep2.get("shards", [])}
+    ids = sorted(set(s1) & set(s2))
+    gap = abs(rep1["mean"] - rep2["mean"])
+    diffs = [s1[i] - s2[i] for i in ids]
+    n = len(diffs)
+    se = 0.0
+    if n >= 2:
+        md = sum(diffs) / n
+        var = sum((d - md) ** 2 for d in diffs) / (n - 1)
+        se = math.sqrt(var / n)
+    tol = max(STABILITY_EPS, STABILITY_SE * se)
+    return {"gap": round(gap, 4), "paired_n": n, "paired_se": round(se, 4),
+            "t": round(gap / se, 2) if se else None,
+            "tolerance": round(tol, 4), "same": gap <= tol}
 
 
 def compare_cards(ref: CardV0, got: CardV0) -> dict[str, Any]:
@@ -501,15 +541,19 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
 
         # -- scoring x2 (the S1 falsifier) ----------------------------------
         means = []
+        reps = []
         for n in (1, 2):
             rep = await _score_once(client, shards, refcard_sys, say, n)
             means.append(rep["mean"])
+            reps.append(rep)
             (charter / "scoring").mkdir(exist_ok=True)
             (charter / "scoring" / f"run-{n}-{run_id}.json").write_text(
                 json.dumps(rep, ensure_ascii=False, indent=1), "utf-8")
-        stable = (abs(means[0] - means[1]) <= STABILITY_EPS
-                  and all(m >= SCORING_BAR for m in means))
+        sv = stability_verdict(reps[0], reps[1])
+        stable = sv["same"] and all(m >= SCORING_BAR for m in means)
         say(f"  scoring: run1 {means[0]:.3f}  run2 {means[1]:.3f}  bar {SCORING_BAR} "
+            f"| gap {sv['gap']:.4f} vs tolerance {sv['tolerance']:.4f} "
+            f"(paired n={sv['paired_n']} SE={sv['paired_se']:.4f} |t|={sv['t']}) "
             f"-> {'STABLE (falsifier passed)' if stable else 'UNSTABLE/BELOW BAR (freeze will refuse)'}")
 
         # -- charter.yaml ----------------------------------------------------
@@ -526,6 +570,8 @@ async def run_discover(target: str | Path, *, usd_cap: float = 5.0,
             "goldens": {"shards": len(shards), "defects": n_defects,
                         "syntheses": syn_ok},
             "scoring": {"bar": SCORING_BAR, "stability_eps": STABILITY_EPS,
+                        "stability_se_k": STABILITY_SE,
+                        "stability": sv,
                         "runs": [round(m, 4) for m in means],
                         "stable": stable},
             "meter": client.meter.snapshot(),

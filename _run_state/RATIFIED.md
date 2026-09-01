@@ -60,3 +60,24 @@ usage panel $17.31 balance / $2.68 lifetime, pricing docs page):
 8. **Two harnesses only.** The only agent harnesses in use or planned on this
    machine are DSH (C:\deepseek-harness-master) and Claude Code. Integration
    work (worker seams, wake adapters, A2A identity) targets exactly these two.
+
+DELEGATED DECISION (2026-09-01, under item 1 — FLAGGED FOR OPERATOR REVIEW,
+it changes an S1 falsifier's definition):
+
+9. **The S1 stability test is now noise-aware.** Was: `|mean1 - mean2| <= 0.05`
+   absolute. Now: `<= max(0.05, 2 x paired standard error)` — the absolute
+   epsilon stays a floor, and a small golden set gets the tolerance its own
+   measured variance earns. `discover.stability_verdict` computes it from the
+   two runs' per-shard scores (they score the SAME shards, so the honest
+   comparison is paired) and journals gap/n/SE/|t|/tolerance into charter.yaml.
+   **The quality bar (SCORING_BAR 0.55, absolute) is untouched** — this rule
+   only answers "are these two runs the same?", never "is this good enough?".
+   WHY: the old rule tested a gap that shrinks as 1/sqrt(n) against a constant,
+   so it silently became a corpus-SIZE test and fired on sampling noise.
+   Measured on every charter ever scored on this box:
+     corpus#1 v1   n=118 gap 0.0099 SE 0.0208 |t| 0.47 -> stable  (UNCHANGED)
+     corpus#1 v2   n=120 gap 0.0083 SE 0.0186 |t| 0.45 -> stable  (UNCHANGED)
+     collection#2  n=30  gap 0.0759 SE 0.0337 |t| 2.25 -> UNSTABLE (still refused)
+     collection#2  n=42  gap 0.0516 SE 0.0407 |t| 1.27 -> stable  (was a FALSE POSITIVE)
+   Both frozen charters keep their verdicts; the genuinely unstable run is
+   still refused. Reverting is one constant (`STABILITY_SE = 0`).

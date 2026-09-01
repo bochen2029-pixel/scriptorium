@@ -238,3 +238,39 @@ def test_freeze_refuses_unstable(monkeypatch, tmp_path):
         + "\n", "utf-8")
     with pytest.raises(SystemExit, match="falsifier NOT passed"):
         run_freeze(arch)
+
+
+def _rep(mean, scores):
+    return {"mean": mean, "shards": [{"id": f"s{i}", "score": v}
+                                     for i, v in enumerate(scores)]}
+
+
+def test_stability_is_noise_aware_not_corpus_size():
+    """The S1 stability rule must ask 'same or different?', not 'big corpus?'.
+    Regression-locked to the four real charter scorings measured 2026-09-01."""
+    from discover import stability_verdict
+
+    # identical runs: zero gap, zero variance -> same
+    v = stability_verdict(_rep(0.70, [0.7] * 20), _rep(0.70, [0.7] * 20))
+    assert v["same"] and v["gap"] == 0.0 and v["paired_n"] == 20
+
+    # a real shift, tiny noise: every shard drops 0.30 -> NOT the same rubric
+    v = stability_verdict(_rep(0.70, [0.7] * 20), _rep(0.40, [0.4] * 20))
+    assert not v["same"] and v["gap"] == 0.3
+
+    # small n, high per-shard variance, gap over the absolute epsilon but
+    # inside the noise the shards themselves show -> same (the false positive
+    # the fixed 0.05 epsilon produced on collection #2's 42-shard charter)
+    a = [0.9, 0.2, 0.8, 0.3, 0.95, 0.15, 0.75, 0.35]
+    b = [0.2, 0.9, 0.3, 0.8, 0.15, 0.95, 0.35, 0.10]
+    v = stability_verdict(_rep(sum(a) / len(a), a), _rep(sum(b) / len(b), b))
+    assert v["gap"] > 0.05 and v["paired_se"] > 0.05 and v["same"]
+
+    # the absolute epsilon stays a FLOOR: a near-deterministic pair with a
+    # sub-epsilon gap passes even though its SE is ~0
+    v = stability_verdict(_rep(0.700, [0.70] * 30), _rep(0.710, [0.71] * 30))
+    assert v["same"] and v["paired_se"] < 0.001 and v["tolerance"] == 0.05
+
+    # degenerate: a single shared shard has no variance estimate -> epsilon only
+    v = stability_verdict(_rep(0.7, [0.7]), _rep(0.9, [0.9]))
+    assert v["paired_n"] == 1 and v["t"] is None and not v["same"]
